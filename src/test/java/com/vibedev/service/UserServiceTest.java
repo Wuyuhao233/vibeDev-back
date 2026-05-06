@@ -42,6 +42,7 @@ class UserServiceTest {
     @Mock BrowsingHistoryRepository browsingHistoryRepo;
     @Mock LoginHistoryRepository loginHistoryRepo;
     @Mock UserExportTaskRepository exportTaskRepo;
+    @Mock UserNotificationSettingRepository notifySettingRepo;
     @Mock FileStorageService fileStorageService;
     @Mock PasswordEncoder passwordEncoder;
     @Mock StringRedisTemplate redis;
@@ -55,7 +56,7 @@ class UserServiceTest {
     void setUp() {
         userService = new UserService(userRepo, postRepo, replyRepo, favoriteRepo,
                 boardRepo, browsingHistoryRepo, loginHistoryRepo, exportTaskRepo,
-                fileStorageService, passwordEncoder, redis, baseUrl);
+                notifySettingRepo, fileStorageService, passwordEncoder, redis, baseUrl);
         when(redis.opsForValue()).thenReturn(valueOps);
     }
 
@@ -422,5 +423,126 @@ class UserServiceTest {
         // viewedAt should be updated (within 1h)
         assertTrue(bh.getViewedAt().isAfter(now.minusSeconds(10)));
         verify(browsingHistoryRepo).save(bh);
+    }
+
+    // ─── Notification Settings ──────────────────────────────
+
+    @Test
+    void getNotifySettings_shouldReturnDefaultsWhenNoSettingsExist() {
+        when(notifySettingRepo.findByUserId("u1")).thenReturn(List.of());
+
+        var result = userService.getNotifySettings("u1");
+
+        assertNotNull(result);
+        assertEquals(7, result.preferences().size());
+        assertTrue(result.preferences().stream().allMatch(p -> "site".equals(p.channel())));
+        assertEquals(1, result.mandatoryEvents().size());
+        assertTrue(result.mandatoryEvents().contains("user_banned"));
+    }
+
+    @Test
+    void getNotifySettings_shouldReturnPersistedSettings() {
+        var setting = new UserNotificationSetting("s1", "u1", "post_replied", "email");
+        when(notifySettingRepo.findByUserId("u1")).thenReturn(List.of(setting));
+
+        var result = userService.getNotifySettings("u1");
+
+        assertEquals(1, result.preferences().size());
+        assertEquals("post_replied", result.preferences().get(0).eventType());
+        assertEquals("email", result.preferences().get(0).channel());
+    }
+
+    @Test
+    void updateNotifySettings_shouldUpsertPreferences() {
+        var existing = new UserNotificationSetting("s1", "u1", "post_replied", "site");
+        when(notifySettingRepo.findByUserIdAndEventType("u1", "post_replied"))
+                .thenReturn(Optional.of(existing));
+        when(notifySettingRepo.findByUserIdAndEventType("u1", "received_like"))
+                .thenReturn(Optional.empty());
+
+        var req = new UpdateNotificationSettingsRequest(List.of(
+                new NotificationPreference("post_replied", "email"),
+                new NotificationPreference("received_like", "off")
+        ));
+
+        assertDoesNotThrow(() -> userService.updateNotifySettings("u1", req));
+
+        assertEquals("email", existing.getChannel());
+        verify(notifySettingRepo).save(existing);
+        verify(notifySettingRepo, times(2)).save(any(UserNotificationSetting.class));
+    }
+
+    @Test
+    void updateNotifySettings_shouldRejectInvalidEventType() {
+        var req = new UpdateNotificationSettingsRequest(List.of(
+                new NotificationPreference("invalid_event", "site")
+        ));
+
+        var ex = assertThrows(BusinessException.class,
+                () -> userService.updateNotifySettings("u1", req));
+        assertEquals(ErrorCode.UNKNOWN.getCode(), ex.getCode());
+        assertTrue(ex.getMessage().contains("无效的事件类型"));
+    }
+
+    @Test
+    void updateNotifySettings_shouldRejectInvalidChannel() {
+        var req = new UpdateNotificationSettingsRequest(List.of(
+                new NotificationPreference("post_replied", "sms")
+        ));
+
+        var ex = assertThrows(BusinessException.class,
+                () -> userService.updateNotifySettings("u1", req));
+        assertEquals(ErrorCode.UNKNOWN.getCode(), ex.getCode());
+        assertTrue(ex.getMessage().contains("无效的通知渠道"));
+    }
+
+    @Test
+    void updateNotifySettings_shouldIgnoreMandatoryEventOff() {
+        when(notifySettingRepo.findByUserIdAndEventType("u1", "user_banned"))
+                .thenReturn(Optional.empty());
+
+        var req = new UpdateNotificationSettingsRequest(List.of(
+                new NotificationPreference("user_banned", "off")
+        ));
+
+        assertDoesNotThrow(() -> userService.updateNotifySettings("u1", req));
+
+        verify(notifySettingRepo, never()).save(any(UserNotificationSetting.class));
+    }
+
+    @Test
+    void updateNotifySettings_shouldAllowMandatoryEventSite() {
+        var existing = new UserNotificationSetting("s1", "u1", "user_banned", "site");
+        when(notifySettingRepo.findByUserIdAndEventType("u1", "user_banned"))
+                .thenReturn(Optional.of(existing));
+
+        var req = new UpdateNotificationSettingsRequest(List.of(
+                new NotificationPreference("user_banned", "email")
+        ));
+
+        assertDoesNotThrow(() -> userService.updateNotifySettings("u1", req));
+
+        assertEquals("email", existing.getChannel());
+        verify(notifySettingRepo).save(existing);
+    }
+
+    @Test
+    void updateNotifySettings_shouldIgnoreEmptyPreferences() {
+        var req = new UpdateNotificationSettingsRequest(List.of());
+
+        assertDoesNotThrow(() -> userService.updateNotifySettings("u1", req));
+
+        verify(notifySettingRepo, never()).findByUserIdAndEventType(any(), any());
+        verify(notifySettingRepo, never()).save(any());
+    }
+
+    @Test
+    void updateNotifySettings_shouldIgnoreNullPreferences() {
+        var req = new UpdateNotificationSettingsRequest(null);
+
+        assertDoesNotThrow(() -> userService.updateNotifySettings("u1", req));
+
+        verify(notifySettingRepo, never()).findByUserIdAndEventType(any(), any());
+        verify(notifySettingRepo, never()).save(any());
     }
 }

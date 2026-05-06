@@ -9,8 +9,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.UUID;
-
 @RestController
 @RequestMapping("/api/v1/users")
 public class UserController {
@@ -139,6 +137,22 @@ public class UserController {
             @RequestParam(defaultValue = "20") int pageSize) {
         String userId = auth.getPrincipal().toString();
         return ApiResponse.ok(userService.getLoginHistory(userId, page, pageSize));
+    }
+
+    // ─── Notification Settings ────────────────────────────
+
+    @GetMapping("/notify-settings")
+    public ApiResponse<NotificationSettingsResponse> getNotifySettings(Authentication auth) {
+        String userId = auth.getPrincipal().toString();
+        return ApiResponse.ok(userService.getNotifySettings(userId));
+    }
+
+    @PutMapping("/notify-settings")
+    public ApiResponse<Void> updateNotifySettings(@Valid @RequestBody UpdateNotificationSettingsRequest req,
+                                                   Authentication auth) {
+        String userId = auth.getPrincipal().toString();
+        userService.updateNotifySettings(userId, req);
+        return ApiResponse.ok();
     }
 
     // ─── Browsing Record ──────────────────────────────────

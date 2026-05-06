@@ -6,7 +6,9 @@ import com.vibedev.dto.auth.*;
 import com.vibedev.dto.user.UserSummary;
 import com.vibedev.entity.LoginHistory;
 import com.vibedev.entity.User;
+import com.vibedev.entity.UserNotificationSetting;
 import com.vibedev.repository.LoginHistoryRepository;
+import com.vibedev.repository.UserNotificationSettingRepository;
 import com.vibedev.repository.UserRepository;
 import com.vibedev.security.JwtUtil;
 import io.jsonwebtoken.Claims;
@@ -21,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -31,6 +34,7 @@ public class AuthService {
 
     private final UserRepository userRepo;
     private final LoginHistoryRepository loginHistoryRepo;
+    private final UserNotificationSettingRepository notifySettingRepo;
     private final JwtUtil jwtUtil;
     private final PasswordEncoder passwordEncoder;
     private final MailService mailService;
@@ -39,11 +43,13 @@ public class AuthService {
     private final String frontendUrl;
 
     public AuthService(UserRepository userRepo, LoginHistoryRepository loginHistoryRepo,
+                       UserNotificationSettingRepository notifySettingRepo,
                        JwtUtil jwtUtil, PasswordEncoder passwordEncoder,
                        MailService mailService, StringRedisTemplate redis,
                        @Value("${app.frontend-url:http://localhost:3000}") String frontendUrl) {
         this.userRepo = userRepo;
         this.loginHistoryRepo = loginHistoryRepo;
+        this.notifySettingRepo = notifySettingRepo;
         this.jwtUtil = jwtUtil;
         this.passwordEncoder = passwordEncoder;
         this.mailService = mailService;
@@ -95,6 +101,16 @@ public class AuthService {
         user.setActivated(false);
         user.setTokenVersion(0);
         userRepo.save(user);
+
+        // initialize 7 default notification settings
+        List<String> eventTypes = List.of(
+                "post_replied", "reply_quoted", "received_like", "post_collected",
+                "post_essenced", "post_pinned", "user_banned");
+        for (String et : eventTypes) {
+            var setting = new UserNotificationSetting(
+                    UUID.randomUUID().toString(), user.getId(), et, "site");
+            notifySettingRepo.save(setting);
+        }
 
         // send verify email
         String token = jwtUtil.generateVerifyEmailToken(UUID.fromString(user.getId()), user.getEmail());

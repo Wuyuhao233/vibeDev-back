@@ -5,7 +5,9 @@ import com.vibedev.common.ErrorCode;
 import com.vibedev.dto.auth.*;
 import com.vibedev.entity.LoginHistory;
 import com.vibedev.entity.User;
+import com.vibedev.entity.UserNotificationSetting;
 import com.vibedev.repository.LoginHistoryRepository;
+import com.vibedev.repository.UserNotificationSettingRepository;
 import com.vibedev.repository.UserRepository;
 import com.vibedev.security.JwtUtil;
 import io.jsonwebtoken.Claims;
@@ -36,6 +38,7 @@ class AuthServiceTest {
 
     @Mock UserRepository userRepo;
     @Mock LoginHistoryRepository loginHistoryRepo;
+    @Mock UserNotificationSettingRepository notifySettingRepo;
     @Mock JwtUtil jwtUtil;
     @Mock PasswordEncoder passwordEncoder;
     @Mock MailService mailService;
@@ -48,8 +51,8 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(userRepo, loginHistoryRepo, jwtUtil,
-                passwordEncoder, mailService, redis, frontendUrl);
+        authService = new AuthService(userRepo, loginHistoryRepo, notifySettingRepo,
+                jwtUtil, passwordEncoder, mailService, redis, frontendUrl);
         when(redis.opsForValue()).thenReturn(valueOps);
     }
 
@@ -68,6 +71,8 @@ class AuthServiceTest {
 
         verify(userRepo).save(argThat(u -> u.getUsername().equals("newuser") && !u.isActivated()));
         verify(mailService).sendVerifyEmail(eq("new@test.com"), eq("newuser"), contains("verify-token"));
+        // verify 7 notification settings initialized
+        verify(notifySettingRepo, times(7)).save(any(UserNotificationSetting.class));
     }
 
     @Test

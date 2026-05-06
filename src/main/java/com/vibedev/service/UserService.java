@@ -19,8 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -37,9 +39,16 @@ public class UserService {
     private final BrowsingHistoryRepository browsingHistoryRepo;
     private final LoginHistoryRepository loginHistoryRepo;
     private final UserExportTaskRepository exportTaskRepo;
+    private final UserNotificationSettingRepository notifySettingRepo;
     private final FileStorageService fileStorageService;
     private final PasswordEncoder passwordEncoder;
     private final StringRedisTemplate redis;
+
+    static final List<String> NOTIFY_EVENT_TYPES = List.of(
+            "post_replied", "reply_quoted", "received_like", "post_collected",
+            "post_essenced", "post_pinned", "user_banned");
+    static final Set<String> MANDATORY_EVENTS = Set.of("user_banned");
+    static final Set<String> VALID_CHANNELS = Set.of("site", "email", "off");
 
     private final String baseUrl;
 
@@ -47,6 +56,7 @@ public class UserService {
                        ReplyRepository replyRepo, FavoriteRepository favoriteRepo,
                        BoardRepository boardRepo, BrowsingHistoryRepository browsingHistoryRepo,
                        LoginHistoryRepository loginHistoryRepo, UserExportTaskRepository exportTaskRepo,
+                       UserNotificationSettingRepository notifySettingRepo,
                        FileStorageService fileStorageService, PasswordEncoder passwordEncoder,
                        StringRedisTemplate redis,
                        @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
@@ -58,6 +68,7 @@ public class UserService {
         this.browsingHistoryRepo = browsingHistoryRepo;
         this.loginHistoryRepo = loginHistoryRepo;
         this.exportTaskRepo = exportTaskRepo;
+        this.notifySettingRepo = notifySettingRepo;
         this.fileStorageService = fileStorageService;
         this.passwordEncoder = passwordEncoder;
         this.redis = redis;
@@ -373,6 +384,58 @@ public class UserService {
         if (count > 200) {
             // delete oldest beyond 200
             browsingHistoryRepo.deleteExcessRecords(userId, 200);
+        }
+    }
+
+    // ─── Notification Settings ─────────────────────────────
+
+    public NotificationSettingsResponse getNotifySettings(String userId) {
+        var settings = notifySettingRepo.findByUserId(userId);
+
+        List<NotificationPreference> preferences;
+        if (settings.isEmpty()) {
+            // return defaults without persisting
+            preferences = NOTIFY_EVENT_TYPES.stream()
+                    .map(et -> new NotificationPreference(et, "site"))
+                    .toList();
+        } else {
+            preferences = settings.stream()
+                    .map(s -> new NotificationPreference(s.getEventType(), s.getChannel()))
+                    .toList();
+        }
+
+        return new NotificationSettingsResponse(preferences, List.copyOf(MANDATORY_EVENTS));
+    }
+
+    @Transactional
+    public void updateNotifySettings(String userId, UpdateNotificationSettingsRequest req) {
+        if (req.preferences() == null || req.preferences().isEmpty()) {
+            return;
+        }
+
+        for (var pref : req.preferences()) {
+            if (!NOTIFY_EVENT_TYPES.contains(pref.eventType())) {
+                throw new BusinessException(ErrorCode.UNKNOWN, "无效的事件类型: " + pref.eventType());
+            }
+            String channel = pref.channel();
+            if (!VALID_CHANNELS.contains(channel)) {
+                throw new BusinessException(ErrorCode.UNKNOWN, "无效的通知渠道: " + channel);
+            }
+            // user_banned cannot be set to off
+            if (MANDATORY_EVENTS.contains(pref.eventType()) && "off".equals(channel)) {
+                continue;
+            }
+
+            var existing = notifySettingRepo.findByUserIdAndEventType(userId, pref.eventType());
+            if (existing.isPresent()) {
+                var s = existing.get();
+                s.setChannel(channel);
+                notifySettingRepo.save(s);
+            } else {
+                var s = new UserNotificationSetting(
+                        UUID.randomUUID().toString(), userId, pref.eventType(), channel);
+                notifySettingRepo.save(s);
+            }
         }
     }
 
