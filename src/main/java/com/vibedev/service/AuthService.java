@@ -38,6 +38,7 @@ public class AuthService {
     private final JwtUtil jwtUtil;
     private final PasswordEncoder passwordEncoder;
     private final MailService mailService;
+    private final CasService casService;
     private final StringRedisTemplate redis;
 
     private final String frontendUrl;
@@ -45,7 +46,8 @@ public class AuthService {
     public AuthService(UserRepository userRepo, LoginHistoryRepository loginHistoryRepo,
                        UserNotificationSettingRepository notifySettingRepo,
                        JwtUtil jwtUtil, PasswordEncoder passwordEncoder,
-                       MailService mailService, StringRedisTemplate redis,
+                       MailService mailService, CasService casService,
+                       StringRedisTemplate redis,
                        @Value("${app.frontend-url:http://localhost:3000}") String frontendUrl) {
         this.userRepo = userRepo;
         this.loginHistoryRepo = loginHistoryRepo;
@@ -53,6 +55,7 @@ public class AuthService {
         this.jwtUtil = jwtUtil;
         this.passwordEncoder = passwordEncoder;
         this.mailService = mailService;
+        this.casService = casService;
         this.redis = redis;
         this.frontendUrl = frontendUrl;
     }
@@ -331,6 +334,102 @@ public class AuthService {
         userRepo.save(user);
 
         log.info("Password reset for user: {}", user.getId());
+    }
+
+    // ─── CAS Login ─────────────────────────────────────
+
+    @Transactional
+    public LoginResponse casLogin(CasLoginParams params, String ip, String userAgent) {
+        // Validate ticket with CAS server
+        CasService.CasUserAttributes attrs = casService.validateTicket(params.ticket(), params.service());
+
+        // Try to find existing user by cas_id
+        var existingByCas = userRepo.findByCasId(attrs.casId());
+        if (existingByCas.isPresent()) {
+            var user = existingByCas.get();
+            if (user.isDeactivated()) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED, "账号已注销");
+            }
+            saveLoginHistory(user.getId(), "cas", ip, userAgent, true);
+            user.setLastLoginAt(Instant.now());
+            userRepo.save(user);
+            return buildLoginResponse(user);
+        }
+
+        // Try to find existing user by email — merge/bind CAS
+        if (attrs.email() != null && !attrs.email().isBlank()) {
+            var existingByEmail = userRepo.findByEmail(attrs.email());
+            if (existingByEmail.isPresent()) {
+                var user = existingByEmail.get();
+                if (user.isDeactivated()) {
+                    throw new BusinessException(ErrorCode.UNAUTHORIZED, "账号已注销");
+                }
+                // Bind CAS to existing account
+                user.setCasId(attrs.casId());
+                if (!user.isActivated()) {
+                    user.setActivated(true); // trust CAS
+                }
+                user.setLastLoginAt(Instant.now());
+                userRepo.save(user);
+                saveLoginHistory(user.getId(), "cas", ip, userAgent, true);
+                return buildLoginResponse(user);
+            }
+        }
+
+        // Create new user from CAS
+        String username = resolveUsername(attrs.username());
+        var user = new User();
+        user.setId(UUID.randomUUID().toString());
+        user.setUsername(username);
+        user.setEmail(attrs.email() != null ? attrs.email() : "");
+        user.setPasswordHash(""); // no password for CAS-only users
+        user.setNickname(attrs.username() != null ? attrs.username() : username);
+        user.setRole("user");
+        user.setLevel(1);
+        user.setPoints(0);
+        user.setActivated(true); // trust CAS
+        user.setCasId(attrs.casId());
+        user.setTokenVersion(0);
+        userRepo.save(user);
+
+        // Initialize default notification settings
+        List<String> eventTypes = List.of(
+                "post_replied", "reply_quoted", "received_like", "post_collected",
+                "post_essenced", "post_pinned", "user_banned");
+        for (String et : eventTypes) {
+            var setting = new UserNotificationSetting(
+                    UUID.randomUUID().toString(), user.getId(), et, "site");
+            notifySettingRepo.save(setting);
+        }
+
+        saveLoginHistory(user.getId(), "cas", ip, userAgent, true);
+        log.info("CAS user created: {} ({})", user.getUsername(), user.getId());
+        return buildLoginResponse(user);
+    }
+
+    private String resolveUsername(String preferred) {
+        if (preferred == null || preferred.isBlank()) {
+            preferred = "user";
+        }
+        // If username is taken by an activated user, append random digits
+        if (userRepo.existsByUsernameAndIsActivatedTrueAndIsDeactivatedFalse(preferred)) {
+            String suffix = String.format("%04d", (int)(Math.random() * 10000));
+            return preferred + suffix;
+        }
+        // Also check for unactivated users with same username
+        var existing = userRepo.findByUsername(preferred);
+        if (existing.isPresent() && existing.get().isActivated()) {
+            String suffix = String.format("%04d", (int)(Math.random() * 10000));
+            return preferred + suffix;
+        }
+        return preferred;
+    }
+
+    private LoginResponse buildLoginResponse(User user) {
+        UUID userId = UUID.fromString(user.getId());
+        String accessToken = jwtUtil.generateAccessToken(userId, user.getUsername(), user.getRole(), user.getTokenVersion());
+        String refreshToken = jwtUtil.generateRefreshToken(userId, user.getTokenVersion());
+        return new LoginResponse(accessToken, refreshToken, 900, UserSummary.from(user));
     }
 
     // ─── helpers ──────────────────────────────────────────

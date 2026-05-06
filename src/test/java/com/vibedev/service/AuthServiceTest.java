@@ -42,6 +42,7 @@ class AuthServiceTest {
     @Mock JwtUtil jwtUtil;
     @Mock PasswordEncoder passwordEncoder;
     @Mock MailService mailService;
+    @Mock CasService casService;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
@@ -52,7 +53,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(userRepo, loginHistoryRepo, notifySettingRepo,
-                jwtUtil, passwordEncoder, mailService, redis, frontendUrl);
+                jwtUtil, passwordEncoder, mailService, casService, redis, frontendUrl);
         when(redis.opsForValue()).thenReturn(valueOps);
     }
 
@@ -338,5 +339,103 @@ class AuthServiceTest {
         var ex = assertThrows(BusinessException.class,
                 () -> authService.resetPassword(new ResetPasswordRequest("expired", "NewPass123")));
         assertEquals(ErrorCode.TOKEN_EXPIRED.getCode(), ex.getCode());
+    }
+
+    // ─── CAS Login ──────────────────────────────────────
+
+    @Test
+    void casLogin_shouldLoginExistingCasUser() {
+        var user = createActiveUser();
+        user.setCasId("cas-123");
+
+        var attrs = new CasService.CasUserAttributes("cas-123", "casuser", "cas@test.com");
+        when(casService.validateTicket("ST-valid", "http://svc")).thenReturn(attrs);
+        when(userRepo.findByCasId("cas-123")).thenReturn(Optional.of(user));
+        when(jwtUtil.generateAccessToken(any(), eq("testuser"), eq("user"), eq(0)))
+                .thenReturn("access-token");
+        when(jwtUtil.generateRefreshToken(any(), eq(0))).thenReturn("refresh-token");
+
+        var resp = authService.casLogin(new CasLoginParams("ST-valid", "http://svc"), "127.0.0.1", "Chrome");
+
+        assertNotNull(resp);
+        assertEquals("access-token", resp.accessToken());
+        assertEquals("testuser", resp.user().username());
+        verify(loginHistoryRepo).save(argThat(lh -> "cas".equals(lh.getLoginType()) && lh.isSuccess()));
+    }
+
+    @Test
+    void casLogin_shouldCreateNewUserWhenNotFound() {
+        var attrs = new CasService.CasUserAttributes("cas-new", "newcas", "newcas@test.com");
+        when(casService.validateTicket("ST-new", "http://svc")).thenReturn(attrs);
+        when(userRepo.findByCasId("cas-new")).thenReturn(Optional.empty());
+        when(userRepo.findByEmail("newcas@test.com")).thenReturn(Optional.empty());
+        when(userRepo.existsByUsernameAndIsActivatedTrueAndIsDeactivatedFalse("newcas")).thenReturn(false);
+        when(userRepo.findByUsername("newcas")).thenReturn(Optional.empty());
+        when(jwtUtil.generateAccessToken(any(), eq("newcas"), eq("user"), eq(0)))
+                .thenReturn("access-token");
+        when(jwtUtil.generateRefreshToken(any(), eq(0))).thenReturn("refresh-token");
+
+        var resp = authService.casLogin(new CasLoginParams("ST-new", "http://svc"), "127.0.0.1", "Chrome");
+
+        assertNotNull(resp);
+        assertEquals("newcas", resp.user().username());
+        verify(userRepo).save(argThat(u -> "cas-new".equals(u.getCasId()) && u.isActivated()));
+        verify(loginHistoryRepo).save(argThat(lh -> "cas".equals(lh.getLoginType()) && lh.isSuccess()));
+    }
+
+    @Test
+    void casLogin_shouldMergeByEmailWhenCasIdNotFound() {
+        var user = createActiveUser();
+        user.setEmail("existing@test.com");
+
+        var attrs = new CasService.CasUserAttributes("cas-merge", "mergeuser", "existing@test.com");
+        when(casService.validateTicket("ST-merge", "http://svc")).thenReturn(attrs);
+        when(userRepo.findByCasId("cas-merge")).thenReturn(Optional.empty());
+        when(userRepo.findByEmail("existing@test.com")).thenReturn(Optional.of(user));
+        when(jwtUtil.generateAccessToken(any(), eq("testuser"), eq("user"), eq(0)))
+                .thenReturn("access-token");
+        when(jwtUtil.generateRefreshToken(any(), eq(0))).thenReturn("refresh-token");
+
+        var resp = authService.casLogin(new CasLoginParams("ST-merge", "http://svc"), "127.0.0.1", "Chrome");
+
+        assertNotNull(resp);
+        assertEquals("testuser", resp.user().username());
+        assertEquals("cas-merge", user.getCasId()); // CAS bound to existing user
+        verify(userRepo).save(user);
+    }
+
+    @Test
+    void casLogin_shouldThrowOnInvalidTicket() {
+        when(casService.validateTicket("ST-bad", "http://svc"))
+                .thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED, "CAS ticket 无效"));
+
+        var ex = assertThrows(BusinessException.class,
+                () -> authService.casLogin(new CasLoginParams("ST-bad", "http://svc"), "127.0.0.1", "Chrome"));
+        assertEquals(ErrorCode.UNAUTHORIZED.getCode(), ex.getCode());
+    }
+
+    @Test
+    void casLogin_shouldThrowWhenCasServerUnreachable() {
+        when(casService.validateTicket("ST-err", "http://svc"))
+                .thenThrow(new BusinessException(ErrorCode.UNKNOWN, "CAS 服务暂不可用"));
+
+        var ex = assertThrows(BusinessException.class,
+                () -> authService.casLogin(new CasLoginParams("ST-err", "http://svc"), "127.0.0.1", "Chrome"));
+        assertEquals(ErrorCode.UNKNOWN.getCode(), ex.getCode());
+    }
+
+    @Test
+    void casLogin_shouldThrowWhenDeactivated() {
+        var user = createActiveUser();
+        user.setDeactivated(true);
+        user.setCasId("cas-dead");
+
+        var attrs = new CasService.CasUserAttributes("cas-dead", "deaduser", "dead@test.com");
+        when(casService.validateTicket("ST-dead", "http://svc")).thenReturn(attrs);
+        when(userRepo.findByCasId("cas-dead")).thenReturn(Optional.of(user));
+
+        var ex = assertThrows(BusinessException.class,
+                () -> authService.casLogin(new CasLoginParams("ST-dead", "http://svc"), "127.0.0.1", "Chrome"));
+        assertEquals(ErrorCode.UNAUTHORIZED.getCode(), ex.getCode());
     }
 }

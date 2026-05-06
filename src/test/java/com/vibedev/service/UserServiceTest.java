@@ -45,6 +45,7 @@ class UserServiceTest {
     @Mock UserNotificationSettingRepository notifySettingRepo;
     @Mock FileStorageService fileStorageService;
     @Mock PasswordEncoder passwordEncoder;
+    @Mock CasService casService;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
@@ -56,7 +57,7 @@ class UserServiceTest {
     void setUp() {
         userService = new UserService(userRepo, postRepo, replyRepo, favoriteRepo,
                 boardRepo, browsingHistoryRepo, loginHistoryRepo, exportTaskRepo,
-                notifySettingRepo, fileStorageService, passwordEncoder, redis, baseUrl);
+                notifySettingRepo, fileStorageService, passwordEncoder, casService, redis, baseUrl);
         when(redis.opsForValue()).thenReturn(valueOps);
     }
 
@@ -544,5 +545,91 @@ class UserServiceTest {
 
         verify(notifySettingRepo, never()).findByUserIdAndEventType(any(), any());
         verify(notifySettingRepo, never()).save(any());
+    }
+
+    // ─── CAS Binding ────────────────────────────────────
+
+    @Test
+    void bindCas_shouldBindCasIdToUser() {
+        var user = createUser("u1", "alice");
+        when(userRepo.findById("u1")).thenReturn(Optional.of(user));
+
+        var attrs = new CasService.CasUserAttributes("cas-123", "casuser", "cas@test.com");
+        when(casService.validateCode("OC-valid", "http://redirect")).thenReturn(attrs);
+        when(userRepo.findByCasId("cas-123")).thenReturn(Optional.empty());
+
+        var result = userService.bindCas("u1", new BindCasRequest("OC-valid", "http://redirect"));
+
+        assertTrue(result.isBound());
+        assertEquals("casuser", result.casUsername());
+        assertEquals("cas-123", user.getCasId());
+        verify(userRepo).save(user);
+    }
+
+    @Test
+    void bindCas_shouldThrowWhenAlreadyBound() {
+        var user = createUser("u1", "alice");
+        user.setCasId("existing-cas");
+        when(userRepo.findById("u1")).thenReturn(Optional.of(user));
+
+        var ex = assertThrows(BusinessException.class,
+                () -> userService.bindCas("u1", new BindCasRequest("OC-xxx", "http://redirect")));
+        assertEquals(ErrorCode.UNKNOWN.getCode(), ex.getCode());
+        assertTrue(ex.getMessage().contains("已绑定"));
+    }
+
+    @Test
+    void bindCas_shouldThrowWhenCasIdTakenByAnotherUser() {
+        var user = createUser("u1", "alice");
+        when(userRepo.findById("u1")).thenReturn(Optional.of(user));
+
+        var otherUser = createUser("u2", "bob");
+        otherUser.setCasId("cas-123");
+
+        var attrs = new CasService.CasUserAttributes("cas-123", "casuser", "cas@test.com");
+        when(casService.validateCode("OC-taken", "http://redirect")).thenReturn(attrs);
+        when(userRepo.findByCasId("cas-123")).thenReturn(Optional.of(otherUser));
+
+        var ex = assertThrows(BusinessException.class,
+                () -> userService.bindCas("u1", new BindCasRequest("OC-taken", "http://redirect")));
+        assertEquals(ErrorCode.EMAIL_TAKEN.getCode(), ex.getCode());
+    }
+
+    @Test
+    void unbindCas_shouldClearCasId() {
+        var user = createUser("u1", "alice");
+        user.setCasId("cas-123");
+        user.setPasswordHash("hashed");
+        when(userRepo.findById("u1")).thenReturn(Optional.of(user));
+
+        var result = userService.unbindCas("u1");
+
+        assertFalse(result.isBound());
+        assertNull(user.getCasId());
+        verify(userRepo).save(user);
+    }
+
+    @Test
+    void unbindCas_shouldThrowWhenNoPassword() {
+        var user = createUser("u1", "alice");
+        user.setCasId("cas-123");
+        user.setPasswordHash(""); // CAS-only user, no password
+        when(userRepo.findById("u1")).thenReturn(Optional.of(user));
+
+        var ex = assertThrows(BusinessException.class,
+                () -> userService.unbindCas("u1"));
+        assertEquals(ErrorCode.UNKNOWN.getCode(), ex.getCode());
+        assertTrue(ex.getMessage().contains("密码"));
+    }
+
+    @Test
+    void unbindCas_shouldReturnNotBoundWhenNoCasId() {
+        var user = createUser("u1", "alice");
+        when(userRepo.findById("u1")).thenReturn(Optional.of(user));
+
+        var result = userService.unbindCas("u1");
+
+        assertFalse(result.isBound());
+        verify(userRepo, never()).save(any(User.class));
     }
 }

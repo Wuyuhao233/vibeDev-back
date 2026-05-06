@@ -42,6 +42,7 @@ public class UserService {
     private final UserNotificationSettingRepository notifySettingRepo;
     private final FileStorageService fileStorageService;
     private final PasswordEncoder passwordEncoder;
+    private final CasService casService;
     private final StringRedisTemplate redis;
 
     static final List<String> NOTIFY_EVENT_TYPES = List.of(
@@ -58,7 +59,7 @@ public class UserService {
                        LoginHistoryRepository loginHistoryRepo, UserExportTaskRepository exportTaskRepo,
                        UserNotificationSettingRepository notifySettingRepo,
                        FileStorageService fileStorageService, PasswordEncoder passwordEncoder,
-                       StringRedisTemplate redis,
+                       CasService casService, StringRedisTemplate redis,
                        @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
         this.userRepo = userRepo;
         this.postRepo = postRepo;
@@ -71,6 +72,7 @@ public class UserService {
         this.notifySettingRepo = notifySettingRepo;
         this.fileStorageService = fileStorageService;
         this.passwordEncoder = passwordEncoder;
+        this.casService = casService;
         this.redis = redis;
         this.baseUrl = baseUrl;
     }
@@ -437,6 +439,55 @@ public class UserService {
                 notifySettingRepo.save(s);
             }
         }
+    }
+
+    // ─── CAS Binding ─────────────────────────────────────
+
+    @Transactional
+    public CasBindingInfo bindCas(String userId, BindCasRequest req) {
+        var user = userRepo.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "用户不存在"));
+
+        if (user.getCasId() != null && !user.getCasId().isBlank()) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "当前账号已绑定 CAS");
+        }
+
+        CasService.CasUserAttributes attrs = casService.validateCode(req.code(), req.redirectUri());
+
+        // Check if cas_id is already bound to another user
+        var existing = userRepo.findByCasId(attrs.casId());
+        if (existing.isPresent() && !existing.get().getId().equals(userId)) {
+            throw new BusinessException(ErrorCode.EMAIL_TAKEN, "该 CAS 账号已被其他论坛账号绑定");
+        }
+
+        user.setCasId(attrs.casId());
+        userRepo.save(user);
+
+        log.info("CAS bound for user {}: {}", user.getId(), attrs.casId());
+        return CasBindingInfo.bound(attrs.username(), Instant.now());
+    }
+
+    @Transactional
+    public CasBindingInfo unbindCas(String userId) {
+        var user = userRepo.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "用户不存在"));
+
+        if (user.getCasId() == null || user.getCasId().isBlank()) {
+            return CasBindingInfo.notBound();
+        }
+
+        // Must have a password set before unbinding CAS
+        if (user.getPasswordHash() == null || user.getPasswordHash().isBlank()) {
+            throw new BusinessException(ErrorCode.UNKNOWN,
+                    "当前账号未设置密码，不允许解绑 CAS。请先设置密码后再解绑");
+        }
+
+        String casId = user.getCasId();
+        user.setCasId(null);
+        userRepo.save(user);
+
+        log.info("CAS unbound for user {}: {}", user.getId(), casId);
+        return CasBindingInfo.notBound();
     }
 
     // ─── Helpers ──────────────────────────────────────────

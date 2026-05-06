@@ -22,4 +22,6 @@ public interface UserRepository extends JpaRepository<User, String> {
     boolean existsByUsernameAndIsActivatedTrueAndIsDeactivatedFalse(String username);
 
     boolean existsByEmailAndIsActivatedTrueAndIsDeactivatedFalse(String email);
+
+    Optional<User> findByCasId(String casId);
 }

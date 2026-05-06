@@ -61,6 +61,13 @@ public class AuthController {
         return ApiResponse.ok();
     }
 
+    @GetMapping("/cas-login")
+    public ApiResponse<LoginResponse> casLogin(@Valid CasLoginParams params,
+                                                HttpServletRequest request) {
+        var result = authService.casLogin(params, getClientIp(request), request.getHeader("User-Agent"));
+        return ApiResponse.ok(result);
+    }
+
     private String getClientIp(HttpServletRequest request) {
         String xForwardedFor = request.getHeader("X-Forwarded-For");
         if (xForwardedFor != null && !xForwardedFor.isBlank()) {

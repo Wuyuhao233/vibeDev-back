@@ -84,6 +84,9 @@ public class User {
     @Column(name = "recovery_deadline")
     private Instant recoveryDeadline;
 
+    @Column(name = "cas_id", length = 100)
+    private String casId;
+
     @PrePersist
     void onCreate() {
         createdAt = Instant.now();
@@ -142,4 +145,6 @@ public class User {
     public void setDeactivatedAt(Instant deactivatedAt) { this.deactivatedAt = deactivatedAt; }
     public Instant getRecoveryDeadline() { return recoveryDeadline; }
     public void setRecoveryDeadline(Instant recoveryDeadline) { this.recoveryDeadline = recoveryDeadline; }
+    public String getCasId() { return casId; }
+    public void setCasId(String casId) { this.casId = casId; }
 }

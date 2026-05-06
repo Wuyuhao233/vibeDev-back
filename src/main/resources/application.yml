@@ -92,6 +92,12 @@ app:
   mail:
     from: ${MAIL_FROM:noreply@vibedev.local}
 
+cas:
+  server_url: ${CAS_SERVER_URL:https://cas.example.com}
+  login_url: ${CAS_LOGIN_URL:https://cas.example.com/login}
+  service_validate_url: ${CAS_SERVICE_VALIDATE_URL:https://cas.example.com/serviceValidate}
+  service: ${CAS_SERVICE:https://forum.example.com/api/v1/auth/cas-login}
+
 logging:
   level:
     com.vibedev: DEBUG

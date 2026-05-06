@@ -163,4 +163,19 @@ public class UserController {
         userService.recordBrowsing(userId, postId);
         return ApiResponse.ok();
     }
+
+    // ─── CAS Binding ───────────────────────────────────────
+
+    @PostMapping("/bind-cas")
+    public ApiResponse<CasBindingInfo> bindCas(@Valid @RequestBody BindCasRequest req,
+                                                Authentication auth) {
+        String userId = auth.getPrincipal().toString();
+        return ApiResponse.ok(userService.bindCas(userId, req));
+    }
+
+    @DeleteMapping("/unbind-cas")
+    public ApiResponse<CasBindingInfo> unbindCas(Authentication auth) {
+        String userId = auth.getPrincipal().toString();
+        return ApiResponse.ok(userService.unbindCas(userId));
+    }
 }
