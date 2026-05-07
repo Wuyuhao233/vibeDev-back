@@ -140,9 +140,6 @@ class NotificationServiceTest {
 
     @Test
     void create_siteDisabled_shouldNotSaveToDb() {
-        when(notifySettingRepo.findByUserIdAndEventType("u6", "post_replied"))
-                .thenReturn(Optional.empty()); // re-default: enabled
-        // Override: disable site for post_replied
         when(notifySettingRepo.findByUserIdAndEventType(anyString(), anyString()))
                 .thenReturn(Optional.of(new UserNotificationSetting("s1", "u6", "post_replied", "off")));
 

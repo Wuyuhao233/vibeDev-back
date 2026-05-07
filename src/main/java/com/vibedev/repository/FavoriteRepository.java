@@ -19,4 +19,8 @@ public interface FavoriteRepository extends JpaRepository<Favorite, String> {
     void deleteByUserIdAndPostId(String userId, String postId);
 
     List<Favorite> findByCollectionFolderId(String collectionFolderId);
+
+    Page<Favorite> findByUserIdAndCollectionFolderIdOrderByCreatedAtDesc(String userId,
+                                                                         String collectionFolderId,
+                                                                         Pageable pageable);
 }

@@ -12,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.data.domain.PageImpl;
 
 import java.util.List;
 import java.util.Optional;
@@ -211,10 +212,47 @@ class FavoriteServiceTest {
         assertEquals(ErrorCode.NOT_FOUND.getCode(), ex.getCode());
     }
 
+    // ─── listFavorites ───────────────────────────────────
+
+    @Test
+    void listFavorites_shouldFilterByFolderId() {
+        var user = createUser("u1", "user", 3);
+        var fav = new Favorite();
+        fav.setId("fav1");
+        fav.setUserId("u1");
+        fav.setPostId("p1");
+        fav.setCollectionFolderId("f1");
+
+        var post = new Post();
+        post.setId("p1");
+        post.setTitle("Test Post");
+        post.setAuthorId("u2");
+        post.setBoardId("b1");
+        post.setDeleted(false);
+
+        var author = createUser("u2", "user", 1);
+        var board = new Board();
+        board.setId("b1");
+        board.setName("Test Board");
+
+        when(favoriteRepo.findByUserIdAndCollectionFolderIdOrderByCreatedAtDesc(
+                anyString(), anyString(), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(fav)));
+        when(postRepo.findById("p1")).thenReturn(Optional.of(post));
+        when(userRepo.findById("u2")).thenReturn(Optional.of(author));
+        when(boardRepo.findById("b1")).thenReturn(Optional.of(board));
+
+        var result = favoriteService.listFavorites("u1", 1, 20, "f1");
+
+        assertEquals(1, result.items().size());
+        assertEquals("Test Post", result.items().get(0).post().title());
+    }
+
     // ─── moveFavorites ───────────────────────────────────
 
     @Test
     void moveFavorites_shouldSucceed() {
+        var user = createUser("u1", "user", 3);
         var targetFolder = createFolder("f2", "u1", "Target", 0);
         var fav1 = new Favorite();
         fav1.setId("fav1");
@@ -225,6 +263,7 @@ class FavoriteServiceTest {
         fav2.setUserId("u1");
         fav2.setPostId("p2");
 
+        when(userRepo.findById("u1")).thenReturn(Optional.of(user));
         when(folderRepo.findByIdAndUserId("f2", "u1")).thenReturn(Optional.of(targetFolder));
         when(favoriteRepo.findByUserIdAndPostId("u1", "p1")).thenReturn(Optional.of(fav1));
         when(favoriteRepo.findByUserIdAndPostId("u1", "p2")).thenReturn(Optional.of(fav2));
@@ -238,13 +277,25 @@ class FavoriteServiceTest {
     }
 
     @Test
+    void moveFavorites_shouldFailWhenLevelBelow3() {
+        var user = createUser("u1", "user", 2);
+        when(userRepo.findById("u1")).thenReturn(Optional.of(user));
+
+        var ex = assertThrows(BusinessException.class,
+                () -> favoriteService.moveFavorites("u1", List.of("p1"), "f1"));
+        assertEquals(ErrorCode.INSUFFICIENT_LEVEL.getCode(), ex.getCode());
+    }
+
+    @Test
     void moveFavorites_toNull_shouldSucceed() {
+        var user = createUser("u1", "user", 3);
         var fav1 = new Favorite();
         fav1.setId("fav1");
         fav1.setUserId("u1");
         fav1.setPostId("p1");
         fav1.setCollectionFolderId("f1");
 
+        when(userRepo.findById("u1")).thenReturn(Optional.of(user));
         when(favoriteRepo.findByUserIdAndPostId("u1", "p1")).thenReturn(Optional.of(fav1));
 
         var result = favoriteService.moveFavorites("u1", List.of("p1"), null);
@@ -255,6 +306,8 @@ class FavoriteServiceTest {
 
     @Test
     void moveFavorites_shouldFailWhenTargetFolderNotFound() {
+        var user = createUser("u1", "user", 3);
+        when(userRepo.findById("u1")).thenReturn(Optional.of(user));
         when(folderRepo.findByIdAndUserId("f999", "u1")).thenReturn(Optional.empty());
 
         var ex = assertThrows(BusinessException.class,
@@ -264,6 +317,8 @@ class FavoriteServiceTest {
 
     @Test
     void moveFavorites_shouldFailWhenNoFavoritesFound() {
+        var user = createUser("u1", "user", 3);
+        when(userRepo.findById("u1")).thenReturn(Optional.of(user));
         when(favoriteRepo.findByUserIdAndPostId("u1", "p1")).thenReturn(Optional.empty());
 
         var ex = assertThrows(BusinessException.class,

@@ -34,12 +34,14 @@ public class FavoriteService {
 
     // ─── Favorites list ────────────────────────────────────
 
-    public PaginatedResponse<FavoriteItem> listFavorites(String userId, int page, int limit) {
+    public PaginatedResponse<FavoriteItem> listFavorites(String userId, int page, int limit, String folderId) {
         if (page < 1) page = 1;
         if (limit < 1 || limit > 50) limit = 20;
         var pageable = PageRequest.of(page - 1, limit);
 
-        var favoritesPage = favoriteRepo.findByUserIdOrderByCreatedAtDesc(userId, pageable);
+        var favoritesPage = folderId != null && !folderId.isBlank()
+                ? favoriteRepo.findByUserIdAndCollectionFolderIdOrderByCreatedAtDesc(userId, folderId, pageable)
+                : favoriteRepo.findByUserIdOrderByCreatedAtDesc(userId, pageable);
 
         var items = favoritesPage.getContent().stream()
                 .map(fav -> {
@@ -139,6 +141,14 @@ public class FavoriteService {
 
     @Transactional
     public MoveFavoritesResponse moveFavorites(String userId, List<String> postIds, String targetFolderId) {
+        // Lv.3+ required for batch move
+        var user = userRepo.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "用户不存在"));
+        if (user.getLevel() < 3) {
+            throw new BusinessException(ErrorCode.INSUFFICIENT_LEVEL,
+                    "Lv.3 及以上用户才可使用收藏夹批量移动");
+        }
+
         // Validate target folder if not null
         if (targetFolderId != null) {
             folderRepo.findByIdAndUserId(targetFolderId, userId)

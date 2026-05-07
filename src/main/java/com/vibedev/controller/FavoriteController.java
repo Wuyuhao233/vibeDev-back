@@ -24,9 +24,10 @@ public class FavoriteController {
     public ApiResponse<PaginatedResponse<FavoriteItem>> listFavorites(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(required = false) String folderId,
             Authentication auth) {
         String userId = SecurityHelper.getUserId(auth);
-        return ApiResponse.ok(favoriteService.listFavorites(userId, page, limit));
+        return ApiResponse.ok(favoriteService.listFavorites(userId, page, limit, folderId));
     }
 
     // ─── Folder endpoints ──────────────────────────────────
@@ -60,10 +61,12 @@ public class FavoriteController {
         return ApiResponse.ok();
     }
 
-    @PostMapping("/favorites/move")
-    public ApiResponse<MoveFavoritesResponse> moveFavorites(@RequestBody MoveFavoritesRequest body,
+    @PutMapping("/favorites/folders/{id}/items")
+    public ApiResponse<MoveFavoritesResponse> moveFavorites(@PathVariable String id,
+                                                             @RequestBody MoveFavoritesRequest body,
                                                              Authentication auth) {
         String userId = SecurityHelper.getUserId(auth);
-        return ApiResponse.ok(favoriteService.moveFavorites(userId, body.postIds(), body.targetFolderId()));
+        String targetFolderId = body.targetFolderId() != null ? body.targetFolderId() : id;
+        return ApiResponse.ok(favoriteService.moveFavorites(userId, body.postIds(), targetFolderId));
     }
 }
