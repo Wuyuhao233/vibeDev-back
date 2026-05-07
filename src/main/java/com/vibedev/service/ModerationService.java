@@ -318,6 +318,31 @@ public class ModerationService {
         );
     }
 
+    // ─── Quality audit (V1.2) ─────────────────────────────
+
+    public QualityAuditSampleResponse sampleForQualityAudit(double sampleRate) {
+        Instant monthStart = YearMonth.now(ZoneOffset.UTC).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        var approvedPosts = postRepo.findApprovedSince(monthStart);
+        long totalApproved = postRepo.countApprovedSince(monthStart);
+
+        if (approvedPosts.isEmpty()) {
+            return new QualityAuditSampleResponse(List.of(), 0, totalApproved, sampleRate);
+        }
+
+        int sampleSize = Math.max(1, (int) Math.ceil(approvedPosts.size() * sampleRate));
+        var shuffled = new java.util.ArrayList<>(approvedPosts);
+        java.util.Collections.shuffle(shuffled);
+        var sampled = shuffled.subList(0, Math.min(sampleSize, shuffled.size()));
+
+        var items = sampled.stream()
+                .map(p -> new QualityAuditSampleResponse.SampleItem(
+                        p.getId(), p.getTitle(), p.getAuthorId(), p.getBoardId(),
+                        p.getCreatedAt(), p.getReplyCount(), p.getLikeCount()))
+                .toList();
+
+        return new QualityAuditSampleResponse(items, items.size(), totalApproved, sampleRate);
+    }
+
     // ─── Private helpers ──────────────────────────────────
 
     private void enqueueForManualReview(String targetType, String targetId, String content,

@@ -1,10 +1,15 @@
 package com.vibedev.service;
 
 import com.vibedev.common.BusinessException;
+import com.vibedev.dto.appeal.CreateAppealRequest;
+import com.vibedev.dto.appeal.HandleAppealRequest;
 import com.vibedev.dto.report.CreateReportRequest;
 import com.vibedev.dto.report.HandleReportRequest;
+import com.vibedev.entity.Appeal;
+import com.vibedev.entity.ModerationQueue;
 import com.vibedev.entity.Post;
 import com.vibedev.entity.Report;
+import com.vibedev.entity.Reply;
 import com.vibedev.entity.User;
 import com.vibedev.repository.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +39,8 @@ class ReportServiceTest {
     @Mock UserRepository userRepo;
     @Mock MuteService muteService;
     @Mock NotificationService notificationService;
+    @Mock AppealRepository appealRepo;
+    @Mock ModerationQueueRepository queueRepo;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
@@ -42,7 +49,7 @@ class ReportServiceTest {
     @BeforeEach
     void setUp() {
         reportService = new ReportService(reportRepo, postRepo, replyRepo, userRepo,
-                muteService, notificationService, redis);
+                muteService, notificationService, appealRepo, queueRepo, redis);
         when(redis.opsForValue()).thenReturn(valueOps);
     }
 
@@ -174,5 +181,203 @@ class ReportServiceTest {
         var result = reportService.list("pending", null, 1, 20, "admin1", "admin", null);
         assertEquals(1, result.items().size());
         assertEquals("rp1", result.items().get(0).id());
+    }
+
+    // ─── Appeal tests ────────────────────────────────────
+
+    @Test
+    void submitAppealShouldSucceed() {
+        var report = new Report();
+        report.setId("rp1");
+        report.setStatus("processed");
+        report.setResult("deleted");
+        report.setTargetType("post");
+        report.setTargetId("p1");
+        when(reportRepo.findById("rp1")).thenReturn(Optional.of(report));
+
+        var post = new Post();
+        post.setId("p1");
+        post.setAuthorId("u2");
+        post.setBoardId("b1");
+        when(postRepo.findById("p1")).thenReturn(Optional.of(post));
+        when(appealRepo.findByReportIdAndStatus("rp1", "pending")).thenReturn(Optional.empty());
+
+        var dto = new CreateAppealRequest("我认为这是误判，请求复审");
+        assertDoesNotThrow(() -> reportService.submitAppeal("rp1", "u2", dto));
+
+        verify(appealRepo).save(any(Appeal.class));
+        verify(queueRepo).save(any(ModerationQueue.class));
+    }
+
+    @Test
+    void submitAppealShouldFailForNonAuthor() {
+        var report = new Report();
+        report.setId("rp1");
+        report.setStatus("processed");
+        report.setResult("deleted");
+        report.setTargetType("post");
+        report.setTargetId("p1");
+        when(reportRepo.findById("rp1")).thenReturn(Optional.of(report));
+
+        var post = new Post();
+        post.setId("p1");
+        post.setAuthorId("u2"); // author is u2
+        post.setBoardId("b1");
+        when(postRepo.findById("p1")).thenReturn(Optional.of(post));
+
+        var dto = new CreateAppealRequest("请求复审");
+        // u3 tries to appeal — not the author
+        assertThrows(BusinessException.class, () -> reportService.submitAppeal("rp1", "u3", dto));
+    }
+
+    @Test
+    void submitAppealShouldFailForUnprocessedReport() {
+        var report = new Report();
+        report.setId("rp1");
+        report.setStatus("pending");
+        when(reportRepo.findById("rp1")).thenReturn(Optional.of(report));
+
+        var dto = new CreateAppealRequest("请求复审");
+        assertThrows(BusinessException.class, () -> reportService.submitAppeal("rp1", "u1", dto));
+    }
+
+    @Test
+    void submitAppealShouldFailForIgnoredReport() {
+        var report = new Report();
+        report.setId("rp1");
+        report.setStatus("processed");
+        report.setResult("ignored");
+        when(reportRepo.findById("rp1")).thenReturn(Optional.of(report));
+
+        var dto = new CreateAppealRequest("请求复审");
+        assertThrows(BusinessException.class, () -> reportService.submitAppeal("rp1", "u1", dto));
+    }
+
+    @Test
+    void submitAppealShouldFailDuplicate() {
+        var report = new Report();
+        report.setId("rp1");
+        report.setStatus("processed");
+        report.setResult("deleted");
+        report.setTargetType("post");
+        report.setTargetId("p1");
+        when(reportRepo.findById("rp1")).thenReturn(Optional.of(report));
+
+        var post = new Post();
+        post.setId("p1");
+        post.setAuthorId("u2");
+        post.setBoardId("b1");
+        when(postRepo.findById("p1")).thenReturn(Optional.of(post));
+        when(appealRepo.findByReportIdAndStatus("rp1", "pending"))
+                .thenReturn(Optional.of(new Appeal()));
+
+        var dto = new CreateAppealRequest("请求复审");
+        assertThrows(BusinessException.class, () -> reportService.submitAppeal("rp1", "u2", dto));
+    }
+
+    @Test
+    void approveAppealShouldRestoreDeletedContent() {
+        var appeal = new Appeal();
+        appeal.setId("a1");
+        appeal.setReportId("rp1");
+        appeal.setAppellantId("u2");
+        appeal.setStatus("pending");
+        when(appealRepo.findById("a1")).thenReturn(Optional.of(appeal));
+
+        var report = new Report();
+        report.setId("rp1");
+        report.setResult("deleted");
+        report.setTargetType("post");
+        report.setTargetId("p1");
+        report.setReporterId("u1");
+        report.setStatus("processed");
+        when(reportRepo.findById("rp1")).thenReturn(Optional.of(report));
+
+        var post = new Post();
+        post.setId("p1");
+        post.setDeleted(true);
+        when(postRepo.findById("p1")).thenReturn(Optional.of(post));
+        when(queueRepo.findByTargetTypeAndTargetIdAndStatus("post", "p1", "pending"))
+                .thenReturn(Optional.empty());
+
+        reportService.approveAppeal("a1", "admin1");
+
+        assertEquals("approved", appeal.getStatus());
+        assertFalse(post.isDeleted());
+        assertNull(post.getDeletedAt());
+        verify(appealRepo).save(appeal);
+    }
+
+    @Test
+    void approveAppealShouldUnmuteUser() {
+        var appeal = new Appeal();
+        appeal.setId("a1");
+        appeal.setReportId("rp1");
+        appeal.setAppellantId("u2");
+        appeal.setStatus("pending");
+        when(appealRepo.findById("a1")).thenReturn(Optional.of(appeal));
+
+        var report = new Report();
+        report.setId("rp1");
+        report.setResult("banned");
+        report.setTargetType("post");
+        report.setTargetId("p1");
+        report.setReporterId("u1");
+        report.setStatus("processed");
+        when(reportRepo.findById("rp1")).thenReturn(Optional.of(report));
+
+        var post = new Post();
+        post.setId("p1");
+        post.setAuthorId("u2");
+        when(postRepo.findById("p1")).thenReturn(Optional.of(post));
+        when(queueRepo.findByTargetTypeAndTargetIdAndStatus("post", "p1", "pending"))
+                .thenReturn(Optional.empty());
+
+        reportService.approveAppeal("a1", "admin1");
+
+        assertEquals("approved", appeal.getStatus());
+        verify(muteService).unmuteUser("admin1", "u2");
+    }
+
+    @Test
+    void rejectAppealShouldSucceed() {
+        var appeal = new Appeal();
+        appeal.setId("a1");
+        appeal.setReportId("rp1");
+        appeal.setAppellantId("u2");
+        appeal.setStatus("pending");
+        when(appealRepo.findById("a1")).thenReturn(Optional.of(appeal));
+
+        var report = new Report();
+        report.setId("rp1");
+        report.setTargetType("post");
+        report.setTargetId("p1");
+        when(reportRepo.findById("rp1")).thenReturn(Optional.of(report));
+        when(queueRepo.findByTargetTypeAndTargetIdAndStatus("post", "p1", "pending"))
+                .thenReturn(Optional.empty());
+
+        reportService.rejectAppeal("a1", "admin1", "维持原判");
+
+        assertEquals("rejected", appeal.getStatus());
+        assertEquals("admin1", appeal.getHandlerId());
+        assertEquals("维持原判", appeal.getHandlerNote());
+        verify(appealRepo).save(appeal);
+    }
+
+    @Test
+    void listAppealsShouldReturnPaginated() {
+        var appeal = new Appeal();
+        appeal.setId("a1");
+        appeal.setReportId("rp1");
+        appeal.setAppellantId("u1");
+        appeal.setReason("请求复审");
+        appeal.setStatus("pending");
+        when(appealRepo.findByStatusOrderByCreatedAtAsc(eq("pending"), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(appeal)));
+
+        var result = reportService.listAppeals("pending", 1, 20);
+        assertEquals(1, result.items().size());
+        assertEquals("a1", result.items().get(0).id());
+        assertEquals("请求复审", result.items().get(0).reason());
     }
 }

@@ -357,6 +357,46 @@ class ModerationServiceTest {
         verify(postRepo).save(any(Post.class));
     }
 
+    // ─── Quality audit (V1.2) ──────────────────────────────
+
+    @Test
+    void sampleForQualityAudit_shouldReturnSample() {
+        var p1 = new Post();
+        p1.setId("p1");
+        p1.setTitle("Post 1");
+        p1.setAuthorId("u1");
+        p1.setBoardId("b1");
+        p1.setReplyCount(2);
+        p1.setLikeCount(5);
+        var p2 = new Post();
+        p2.setId("p2");
+        p2.setTitle("Post 2");
+        p2.setAuthorId("u2");
+        p2.setBoardId("b1");
+        p2.setReplyCount(0);
+        p2.setLikeCount(1);
+
+        when(postRepo.findApprovedSince(any())).thenReturn(List.of(p1, p2));
+        when(postRepo.countApprovedSince(any())).thenReturn(2L);
+
+        var result = moderationService.sampleForQualityAudit(0.05);
+
+        assertEquals(1, result.items().size()); // 5% of 2 = 0.1 -> ceil -> 1
+        assertEquals(2, result.totalApprovedInMonth());
+        assertEquals(0.05, result.sampleRate());
+    }
+
+    @Test
+    void sampleForQualityAudit_shouldReturnEmptyWhenNoPosts() {
+        when(postRepo.findApprovedSince(any())).thenReturn(List.of());
+        when(postRepo.countApprovedSince(any())).thenReturn(0L);
+
+        var result = moderationService.sampleForQualityAudit(0.05);
+
+        assertEquals(0, result.items().size());
+        assertEquals(0, result.totalApprovedInMonth());
+    }
+
     @Test
     void reviewAsync_shouldDegradeWhenBudgetExceeded() throws Exception {
         var post = new Post();

@@ -3,7 +3,12 @@ package com.vibedev.service;
 import com.vibedev.common.BusinessException;
 import com.vibedev.common.ErrorCode;
 import com.vibedev.common.PaginatedResponse;
+import com.vibedev.dto.appeal.AppealItem;
+import com.vibedev.dto.appeal.CreateAppealRequest;
+import com.vibedev.dto.appeal.HandleAppealRequest;
 import com.vibedev.dto.report.*;
+import com.vibedev.entity.Appeal;
+import com.vibedev.entity.ModerationQueue;
 import com.vibedev.entity.Report;
 import com.vibedev.repository.*;
 import org.slf4j.Logger;
@@ -30,6 +35,8 @@ public class ReportService {
     private final UserRepository userRepo;
     private final MuteService muteService;
     private final NotificationService notificationService;
+    private final AppealRepository appealRepo;
+    private final ModerationQueueRepository queueRepo;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
 
     public ReportService(ReportRepository reportRepo,
@@ -38,6 +45,8 @@ public class ReportService {
                          UserRepository userRepo,
                          MuteService muteService,
                          NotificationService notificationService,
+                         AppealRepository appealRepo,
+                         ModerationQueueRepository queueRepo,
                          org.springframework.data.redis.core.StringRedisTemplate redis) {
         this.reportRepo = reportRepo;
         this.postRepo = postRepo;
@@ -45,6 +54,8 @@ public class ReportService {
         this.userRepo = userRepo;
         this.muteService = muteService;
         this.notificationService = notificationService;
+        this.appealRepo = appealRepo;
+        this.queueRepo = queueRepo;
         this.redis = redis;
     }
 
@@ -190,6 +201,142 @@ public class ReportService {
         return new ReportStatsResponse(pendingCount, 0, totalReports);
     }
 
+    // ─── Appeal ───────────────────────────────────────────
+
+    @Transactional
+    public void submitAppeal(String reportId, String userId, CreateAppealRequest dto) {
+        var report = reportRepo.findById(reportId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "举报工单不存在"));
+
+        if (!"processed".equals(report.getStatus())) {
+            throw new BusinessException(ErrorCode.DUPLICATE_SUBMIT, "该举报尚未处理，无法申诉");
+        }
+
+        String result = report.getResult();
+        if (!"deleted".equals(result) && !"banned".equals(result)) {
+            throw new BusinessException(ErrorCode.DUPLICATE_SUBMIT, "该处理结果不支持申诉");
+        }
+
+        // Verify appellant is the target content author
+        String targetAuthorId = getTargetAuthorId(report.getTargetType(), report.getTargetId());
+        if (targetAuthorId == null || !targetAuthorId.equals(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "权限不足，仅作者本人可申诉");
+        }
+
+        // Check duplicate appeal
+        var existingAppeal = appealRepo.findByReportIdAndStatus(reportId, "pending");
+        if (existingAppeal.isPresent()) {
+            throw new BusinessException(ErrorCode.DUPLICATE_SUBMIT, "该举报已有待处理的申诉");
+        }
+
+        // Create appeal
+        var appeal = new Appeal();
+        appeal.setId(UUID.randomUUID().toString());
+        appeal.setReportId(reportId);
+        appeal.setAppellantId(userId);
+        appeal.setReason(dto.reason());
+        appeal.setStatus("pending");
+        appealRepo.save(appeal);
+
+        // Add to moderation queue with priority=1
+        var q = new ModerationQueue();
+        q.setId(UUID.randomUUID().toString());
+        q.setTargetType(report.getTargetType());
+        q.setTargetId(report.getTargetId());
+        q.setAuthorId(targetAuthorId);
+        q.setBoardId(getTargetBoardId(report.getTargetType(), report.getTargetId()));
+        q.setPriority(1);
+        q.setStatus("pending");
+        q.setReason("申诉复审: " + dto.reason());
+        queueRepo.save(q);
+
+        // Notify admins about new appeal
+        notificationService.create(userId, "appeal_submitted",
+                "申诉已提交",
+                "你的申诉已提交，将优先处理",
+                report.getTargetType(), report.getTargetId());
+    }
+
+    public PaginatedResponse<AppealItem> listAppeals(String status, int page, int pageSize) {
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 50) pageSize = 20;
+        var pageable = PageRequest.of(page - 1, pageSize);
+
+        var result = appealRepo.findByStatusOrderByCreatedAtAsc(status, pageable);
+        var items = result.getContent().stream()
+                .map(AppealItem::from)
+                .toList();
+        return PaginatedResponse.of(items, result.getTotalElements(), page, pageSize);
+    }
+
+    @Transactional
+    public void approveAppeal(String appealId, String handlerId) {
+        var appeal = appealRepo.findById(appealId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "申诉不存在"));
+
+        if (!"pending".equals(appeal.getStatus())) {
+            throw new BusinessException(ErrorCode.DUPLICATE_SUBMIT, "该申诉已被处理");
+        }
+
+        var report = reportRepo.findById(appeal.getReportId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "关联举报工单不存在"));
+
+        // Undo the report action
+        String reportResult = report.getResult();
+        if ("deleted".equals(reportResult)) {
+            restoreTarget(report.getTargetType(), report.getTargetId());
+        } else if ("banned".equals(reportResult)) {
+            String targetAuthorId = getTargetAuthorId(report.getTargetType(), report.getTargetId());
+            if (targetAuthorId != null) {
+                muteService.unmuteUser(handlerId, targetAuthorId);
+            }
+        }
+
+        // Mark appeal as approved
+        appeal.setStatus("approved");
+        appeal.setHandlerId(handlerId);
+        appeal.setProcessedAt(Instant.now());
+        appealRepo.save(appeal);
+
+        // Resolve the associated queue entry
+        resolveAppealQueueEntry(report.getTargetType(), report.getTargetId());
+
+        // Notify appellant
+        notificationService.create(appeal.getAppellantId(), "appeal_approved",
+                "申诉通过",
+                "你的申诉已通过，内容已恢复",
+                report.getTargetType(), report.getTargetId());
+    }
+
+    @Transactional
+    public void rejectAppeal(String appealId, String handlerId, String note) {
+        var appeal = appealRepo.findById(appealId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "申诉不存在"));
+
+        if (!"pending".equals(appeal.getStatus())) {
+            throw new BusinessException(ErrorCode.DUPLICATE_SUBMIT, "该申诉已被处理");
+        }
+
+        appeal.setStatus("rejected");
+        appeal.setHandlerId(handlerId);
+        appeal.setHandlerNote(note);
+        appeal.setProcessedAt(Instant.now());
+        appealRepo.save(appeal);
+
+        // Resolve the associated queue entry
+        var report = reportRepo.findById(appeal.getReportId()).orElse(null);
+        if (report != null) {
+            resolveAppealQueueEntry(report.getTargetType(), report.getTargetId());
+        }
+
+        // Notify appellant
+        notificationService.create(appeal.getAppellantId(), "appeal_rejected",
+                "申诉驳回",
+                "你的申诉已被驳回" + (note != null && !note.isBlank() ? "，原因：" + note : ""),
+                report != null ? report.getTargetType() : null,
+                report != null ? report.getTargetId() : null);
+    }
+
     private ReportItem toItem(Report r) {
         return new ReportItem(
                 r.getId(), r.getReporterId(), r.getTargetType(), r.getTargetId(),
@@ -271,6 +418,50 @@ public class ReportService {
         if (user == null || !"moderator".equals(user.getRole())) {
             throw new BusinessException(ErrorCode.NOT_MODERATOR_OF_BOARD, "权限不足，非管辖版块");
         }
+    }
+
+    private void restoreTarget(String targetType, String targetId) {
+        switch (targetType) {
+            case "post":
+                postRepo.findById(targetId).ifPresent(p -> {
+                    p.setDeleted(false);
+                    p.setDeletedAt(null);
+                    p.setDeletedBy(null);
+                    postRepo.save(p);
+                });
+                break;
+            case "reply":
+                replyRepo.findById(targetId).ifPresent(r -> {
+                    r.setDeleted(false);
+                    r.setDeletedAt(null);
+                    replyRepo.save(r);
+                });
+                break;
+        }
+    }
+
+    private String getTargetBoardId(String targetType, String targetId) {
+        switch (targetType) {
+            case "post":
+                return postRepo.findById(targetId).map(p -> p.getBoardId()).orElse(null);
+            case "reply":
+                var reply = replyRepo.findById(targetId).orElse(null);
+                if (reply != null) {
+                    return postRepo.findById(reply.getPostId()).map(p -> p.getBoardId()).orElse(null);
+                }
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    private void resolveAppealQueueEntry(String targetType, String targetId) {
+        var queueEntry = queueRepo.findByTargetTypeAndTargetIdAndStatus(targetType, targetId, "pending");
+        queueEntry.ifPresent(q -> {
+            q.setStatus("approved");
+            q.setHandledAt(Instant.now());
+            queueRepo.save(q);
+        });
     }
 
     private String resultLabel(String result) {

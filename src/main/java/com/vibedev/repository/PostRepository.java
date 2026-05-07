@@ -56,6 +56,12 @@ public interface PostRepository extends JpaRepository<Post, String> {
             " ORDER BY p.createdAt DESC")
     Page<Post> findByTagIds(@Param("tagIds") List<String> tagIds, Pageable pageable);
 
+    @Query("SELECT p FROM Post p WHERE p.auditStatus = 'approved' AND p.isDeleted = false AND p.createdAt >= :since")
+    List<Post> findApprovedSince(@Param("since") Instant since);
+
+    @Query("SELECT COUNT(p) FROM Post p WHERE p.auditStatus = 'approved' AND p.isDeleted = false AND p.createdAt >= :since")
+    long countApprovedSince(@Param("since") Instant since);
+
     // HotScore update
     @Modifying
     @Query(value = "UPDATE posts SET heat_score = " +

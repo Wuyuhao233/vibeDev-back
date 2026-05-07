@@ -1,10 +1,7 @@
 package com.vibedev.controller;
 
 import com.vibedev.common.ApiResponse;
-import com.vibedev.dto.moderation.RejectRequest;
-import com.vibedev.dto.moderation.ReviewQueueFilter;
-import com.vibedev.dto.moderation.ReviewQueueListResponse;
-import com.vibedev.dto.moderation.ReviewStatsResponse;
+import com.vibedev.dto.moderation.*;
 import com.vibedev.security.SecurityHelper;
 import com.vibedev.service.ModerationService;
 import jakarta.validation.Valid;
@@ -57,5 +54,11 @@ public class ModerationController {
         String userId = SecurityHelper.getUserId(auth);
         String role = SecurityHelper.getRole(auth);
         return ApiResponse.ok(moderationService.getReviewStats(userId, role));
+    }
+
+    @GetMapping("/admin/quality-audit/sample")
+    public ApiResponse<QualityAuditSampleResponse> sampleQualityAudit(
+            @RequestParam(defaultValue = "0.05") double rate) {
+        return ApiResponse.ok(moderationService.sampleForQualityAudit(rate));
     }
 }
