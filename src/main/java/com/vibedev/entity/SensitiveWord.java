@@ -17,6 +17,12 @@ public class SensitiveWord {
     @Column(length = 50)
     private String category;
 
+    @Column(name = "match_type", length = 20, nullable = false)
+    private String matchType = "exact";
+
+    @Column(name = "created_by", length = 36)
+    private String createdBy;
+
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;
 
@@ -43,6 +49,10 @@ public class SensitiveWord {
     public void setWord(String word) { this.word = word; }
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
+    public String getMatchType() { return matchType; }
+    public void setMatchType(String matchType) { this.matchType = matchType; }
+    public String getCreatedBy() { return createdBy; }
+    public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
     public boolean isActive() { return isActive; }
     public void setActive(boolean active) { isActive = active; }
     public Instant getCreatedAt() { return createdAt; }

@@ -133,6 +133,7 @@ public class User {
     public int getVersion() { return version; }
     public void setVersion(int version) { this.version = version; }
     public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
     public Instant getLastLoginAt() { return lastLoginAt; }
     public void setLastLoginAt(Instant lastLoginAt) { this.lastLoginAt = lastLoginAt; }
     public int getLoginFailCount() { return loginFailCount; }

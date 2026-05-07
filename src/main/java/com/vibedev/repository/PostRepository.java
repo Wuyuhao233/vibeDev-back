@@ -62,6 +62,19 @@ public interface PostRepository extends JpaRepository<Post, String> {
     @Query("SELECT COUNT(p) FROM Post p WHERE p.auditStatus = 'approved' AND p.isDeleted = false AND p.createdAt >= :since")
     long countApprovedSince(@Param("since") Instant since);
 
+    // Admin post list: includes deleted, filterable by board/status/search
+    @Query("SELECT p FROM Post p WHERE " +
+            "(:boardId IS NULL OR p.boardId = :boardId) AND " +
+            "(:status IS NULL OR " +
+            "  (:status = 'active' AND p.isDeleted = false) OR " +
+            "  (:status = 'deleted' AND p.isDeleted = true)) AND " +
+            "(:search IS NULL OR p.title LIKE %:search% OR p.contentMarkdown LIKE %:search%) " +
+            "ORDER BY p.createdAt DESC")
+    Page<Post> findPostsForAdmin(@Param("boardId") String boardId,
+                                  @Param("status") String status,
+                                  @Param("search") String search,
+                                  Pageable pageable);
+
     // HotScore update
     @Modifying
     @Query(value = "UPDATE posts SET heat_score = " +
