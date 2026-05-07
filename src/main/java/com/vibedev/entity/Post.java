@@ -1,6 +1,8 @@
 package com.vibedev.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import java.sql.Types;
 import java.time.Instant;
 
 @Entity
@@ -68,6 +70,7 @@ public class Post {
     @Column(name = "content_length")
     private int contentLength = 0;
 
+    @JdbcTypeCode(Types.TINYINT)
     @Column(name = "has_code_block")
     private boolean hasCodeBlock = false;
 

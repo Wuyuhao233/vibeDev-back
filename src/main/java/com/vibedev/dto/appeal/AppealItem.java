@@ -1,31 +1,23 @@
 package com.vibedev.dto.appeal;
 
-import com.vibedev.entity.Appeal;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.Instant;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record AppealItem(
         String id,
-        String reportId,
-        String appellantId,
-        String reason,
+        @JsonProperty("content_id") String contentId,
+        @JsonProperty("content_title") String contentTitle,
+        @JsonProperty("content_summary") String contentSummary,
+        @JsonProperty("appellant_username") String appellantUsername,
+        @JsonProperty("violation_category") String violationCategory,
+        @JsonProperty("ai_score") Integer aiScore,
+        @JsonProperty("appeal_reason") String appealReason,
         String status,
-        String handlerId,
-        String handlerNote,
-        Instant createdAt,
-        Instant processedAt
-) {
-    public static AppealItem from(Appeal a) {
-        return new AppealItem(
-                a.getId(),
-                a.getReportId(),
-                a.getAppellantId(),
-                a.getReason(),
-                a.getStatus(),
-                a.getHandlerId(),
-                a.getHandlerNote(),
-                a.getCreatedAt(),
-                a.getProcessedAt()
-        );
-    }
-}
+        @JsonProperty("reviewed_by") String reviewedBy,
+        @JsonProperty("review_note") String reviewNote,
+        @JsonProperty("created_at") Instant createdAt,
+        @JsonProperty("reviewed_at") Instant reviewedAt
+) {}

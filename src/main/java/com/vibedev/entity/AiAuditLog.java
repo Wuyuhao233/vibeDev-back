@@ -1,7 +1,9 @@
 package com.vibedev.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
 import java.math.BigDecimal;
+import java.sql.Types;
 import java.time.Instant;
 
 @Entity
@@ -30,6 +32,7 @@ public class AiAuditLog {
     @Column(name = "response_category", length = 50)
     private String responseCategory;
 
+    @JdbcTypeCode(Types.TINYINT)
     @Column(name = "is_degraded")
     private boolean isDegraded = false;
 

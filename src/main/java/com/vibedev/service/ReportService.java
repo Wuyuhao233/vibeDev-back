@@ -9,7 +9,10 @@ import com.vibedev.dto.appeal.HandleAppealRequest;
 import com.vibedev.dto.report.*;
 import com.vibedev.entity.Appeal;
 import com.vibedev.entity.ModerationQueue;
+import com.vibedev.entity.Post;
+import com.vibedev.entity.Reply;
 import com.vibedev.entity.Report;
+import com.vibedev.entity.User;
 import com.vibedev.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,7 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class ReportService {
@@ -263,10 +267,123 @@ public class ReportService {
         var pageable = PageRequest.of(page - 1, pageSize);
 
         var result = appealRepo.findByStatusOrderByCreatedAtAsc(status, pageable);
-        var items = result.getContent().stream()
-                .map(AppealItem::from)
-                .toList();
+        var appeals = result.getContent();
+
+        if (appeals.isEmpty()) {
+            return PaginatedResponse.of(List.of(), result.getTotalElements(), page, pageSize);
+        }
+
+        // Load related Reports
+        List<String> reportIds = appeals.stream()
+                .map(Appeal::getReportId).distinct().toList();
+        Map<String, Report> reportsById = reportRepo.findAllById(reportIds).stream()
+                .collect(Collectors.toMap(Report::getId, r -> r));
+
+        // Collect targetType/targetId pairs for content and moderation data
+        record TargetKey(String targetType, String targetId) {}
+        List<TargetKey> targetKeys = reportsById.values().stream()
+                .map(r -> new TargetKey(r.getTargetType(), r.getTargetId()))
+                .distinct().toList();
+
+        // Load Post content
+        List<String> postIds = targetKeys.stream()
+                .filter(t -> "post".equals(t.targetType()))
+                .map(TargetKey::targetId).distinct().toList();
+        Map<String, Post> postsById = postIds.isEmpty() ? Map.of()
+                : postRepo.findAllById(postIds).stream()
+                        .collect(Collectors.toMap(Post::getId, p -> p));
+
+        // Load Reply content
+        List<String> replyIds = targetKeys.stream()
+                .filter(t -> "reply".equals(t.targetType()))
+                .map(TargetKey::targetId).distinct().toList();
+        Map<String, Reply> repliesById = replyIds.isEmpty() ? Map.of()
+                : replyRepo.findAllById(replyIds).stream()
+                        .collect(Collectors.toMap(Reply::getId, r -> r));
+
+        // Load ModerationQueue entries for AI scores
+        Map<String, Integer> aiScoresByTarget = new HashMap<>();
+        Map<String, String> aiCategoriesByTarget = new HashMap<>();
+        for (TargetKey tk : targetKeys) {
+            var mq = queueRepo.findFirstByTargetTypeAndTargetIdAndAiScoreGreaterThanOrderByAiScoreDesc(
+                    tk.targetType(), tk.targetId(), 0);
+            mq.ifPresent(q -> {
+                aiScoresByTarget.put(tk.targetType() + ":" + tk.targetId(), q.getAiScore());
+                aiCategoriesByTarget.put(tk.targetType() + ":" + tk.targetId(), q.getAiCategory());
+            });
+        }
+
+        // Load users: appellants + reviewers
+        List<String> appellantIds = appeals.stream()
+                .map(Appeal::getAppellantId).distinct().toList();
+        List<String> handlerIds = appeals.stream()
+                .map(Appeal::getHandlerId).filter(Objects::nonNull).distinct().toList();
+        Set<String> allUserIds = new HashSet<>(appellantIds);
+        allUserIds.addAll(handlerIds);
+        Map<String, User> usersById = userRepo.findAllById(allUserIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+
+        var items = appeals.stream().map(appeal -> {
+            var report = reportsById.get(appeal.getReportId());
+            String contentId = report != null ? report.getTargetId() : "";
+            String targetType = report != null ? report.getTargetType() : "";
+            String contentTitle = "";
+            String contentSummary = "";
+            String boardId = null;
+
+            if ("post".equals(targetType)) {
+                var post = postsById.get(contentId);
+                if (post != null) {
+                    contentTitle = post.getTitle();
+                    contentSummary = truncateContent(post.getContentMarkdown(), 200);
+                    boardId = post.getBoardId();
+                }
+            } else if ("reply".equals(targetType)) {
+                var reply = repliesById.get(contentId);
+                if (reply != null) {
+                    contentTitle = "回复内容";
+                    contentSummary = truncateContent(reply.getContentMarkdown(), 200);
+                }
+            }
+
+            var appellant = usersById.get(appeal.getAppellantId());
+            String appellantUsername = appellant != null ? appellant.getUsername() : "未知用户";
+
+            var handler = usersById.get(appeal.getHandlerId());
+            String reviewedBy = handler != null ? handler.getUsername() : null;
+
+            String scoreKey = targetType + ":" + contentId;
+            Integer aiScore = aiScoresByTarget.get(scoreKey);
+
+            String violationCategory = aiCategoriesByTarget.get(scoreKey);
+            if (violationCategory == null && report != null) {
+                violationCategory = report.getReasonType();
+            }
+
+            return new AppealItem(
+                    appeal.getId(),
+                    contentId,
+                    contentTitle,
+                    contentSummary,
+                    appellantUsername,
+                    violationCategory,
+                    aiScore,
+                    appeal.getReason(),
+                    appeal.getStatus(),
+                    reviewedBy,
+                    appeal.getHandlerNote(),
+                    appeal.getCreatedAt(),
+                    appeal.getProcessedAt()
+            );
+        }).toList();
+
         return PaginatedResponse.of(items, result.getTotalElements(), page, pageSize);
+    }
+
+    private String truncateContent(String content, int maxLength) {
+        if (content == null) return "";
+        if (content.length() <= maxLength) return content;
+        return content.substring(0, maxLength) + "...";
     }
 
     @Transactional
@@ -427,6 +544,7 @@ public class ReportService {
                     p.setDeleted(false);
                     p.setDeletedAt(null);
                     p.setDeletedBy(null);
+                    p.setAuditStatus("approved");
                     postRepo.save(p);
                 });
                 break;
@@ -434,6 +552,7 @@ public class ReportService {
                 replyRepo.findById(targetId).ifPresent(r -> {
                     r.setDeleted(false);
                     r.setDeletedAt(null);
+                    r.setAuditStatus("approved");
                     replyRepo.save(r);
                 });
                 break;

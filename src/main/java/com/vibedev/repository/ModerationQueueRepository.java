@@ -26,6 +26,9 @@ public interface ModerationQueueRepository extends JpaRepository<ModerationQueue
 
     Optional<ModerationQueue> findByTargetTypeAndTargetIdAndStatus(String targetType, String targetId, String status);
 
+    Optional<ModerationQueue> findFirstByTargetTypeAndTargetIdAndAiScoreGreaterThanOrderByAiScoreDesc(
+            String targetType, String targetId, int aiScore);
+
     @Query("SELECT COUNT(m) FROM ModerationQueue m WHERE m.status = :status")
     long countByStatus(@Param("status") String status);
 

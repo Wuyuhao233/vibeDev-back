@@ -17,6 +17,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.ZSetOperations;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -236,5 +237,51 @@ class PointsServiceTest {
         assertEquals("create_post", log.getReason());
         assertEquals("post", log.getRelatedType());
         assertEquals("p1", log.getRelatedId());
+    }
+
+    // ─── recalculateAllPoints ─────────────────────────────
+
+    @Test
+    void recalculateAllPoints_shouldUpdateMismatchedUsers() {
+        var u1 = createUser("u1", 100, 2);
+        var u2 = createUser("u2", 200, 3);
+        when(userRepo.findAll()).thenReturn(List.of(u1, u2));
+        when(pointsLogRepo.sumAmountByUserId("u1")).thenReturn(150);
+        when(pointsLogRepo.sumAmountByUserId("u2")).thenReturn(200);
+
+        int updated = pointsService.recalculateAllPoints();
+
+        assertEquals(1, updated);
+        assertEquals(150, u1.getPoints());
+        assertEquals(2, u1.getLevel());
+        assertEquals(200, u2.getPoints());
+        assertEquals(3, u2.getLevel());
+        verify(userRepo, atLeastOnce()).save(any(User.class));
+    }
+
+    @Test
+    void recalculateAllPoints_shouldUpdateLevelOnRecalc() {
+        var u = createUser("u1", 50, 1);
+        when(userRepo.findAll()).thenReturn(List.of(u));
+        when(pointsLogRepo.sumAmountByUserId("u1")).thenReturn(500);
+
+        int updated = pointsService.recalculateAllPoints();
+
+        assertEquals(1, updated);
+        assertEquals(500, u.getPoints());
+        assertEquals(3, u.getLevel());
+    }
+
+    @Test
+    void recalculateAllPoints_shouldNotUpdateMatchingUsers() {
+        var u = createUser("u1", 100, 2);
+        when(userRepo.findAll()).thenReturn(List.of(u));
+        when(pointsLogRepo.sumAmountByUserId("u1")).thenReturn(100);
+
+        int updated = pointsService.recalculateAllPoints();
+
+        assertEquals(0, updated);
+        assertEquals(100, u.getPoints());
+        assertEquals(2, u.getLevel());
     }
 }
