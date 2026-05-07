@@ -200,5 +200,24 @@ public class PointsService {
         pointsLogRepo.save(log);
     }
 
+    @Transactional
+    public int recalculateAllPoints() {
+        var allUsers = userRepo.findAll();
+        int updatedCount = 0;
+        for (var user : allUsers) {
+            int calculatedPoints = pointsLogRepo.sumAmountByUserId(user.getId());
+            if (calculatedPoints != user.getPoints()) {
+                user.setPoints(calculatedPoints);
+                int newLevel = getLevelByPoints(calculatedPoints);
+                user.setLevel(newLevel);
+                userRepo.save(user);
+                updateLeaderboard(user.getId(), calculatedPoints);
+                updatedCount++;
+            }
+        }
+        log.info("Recalculated points for {} users ({} changed)", allUsers.size(), updatedCount);
+        return updatedCount;
+    }
+
     public record PointsRule(int points, int dailyCap) {}
 }
