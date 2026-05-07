@@ -62,7 +62,7 @@ public class Post {
     @Column(name = "last_edited_at")
     private Instant lastEditedAt;
 
-    @Column(name = "heat_score", precision = 10, scale = 4)
+    @Column(name = "heat_score", columnDefinition = "DOUBLE")
     private double heatScore = 0;
 
     @Column(name = "content_length")
