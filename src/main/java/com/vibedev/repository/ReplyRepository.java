@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 public interface ReplyRepository extends JpaRepository<Reply, String> {
@@ -13,6 +14,10 @@ public interface ReplyRepository extends JpaRepository<Reply, String> {
     Optional<Reply> findByIdAndIsDeletedFalse(String id);
 
     Page<Reply> findByPostIdAndIsDeletedFalseOrderByCreatedAtAsc(String postId, Pageable pageable);
+
+    Page<Reply> findByPostIdAndIsDeletedFalseAndParentReplyIdIsNullOrderByCreatedAtAsc(String postId, Pageable pageable);
+
+    List<Reply> findByPostIdAndIsDeletedFalseAndParentReplyIdInOrderByCreatedAtAsc(String postId, List<String> parentIds);
 
     Page<Reply> findByAuthorIdAndIsDeletedFalseOrderByCreatedAtDesc(String authorId, Pageable pageable);
 

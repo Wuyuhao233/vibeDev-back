@@ -97,7 +97,24 @@ public class ReplyService {
             }
         }
 
-        // 7. Create reply (V1.0: flat, depth=0)
+        // 7. Resolve parent reply and depth (V1.1: nested replies)
+        String parentReplyId = null;
+        int depth = 0;
+        if (dto.parentReplyId() != null && !dto.parentReplyId().isBlank()) {
+            var parentReply = replyRepo.findByIdAndIsDeletedFalse(dto.parentReplyId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "父回复不存在"));
+            if (!parentReply.getPostId().equals(postId)) {
+                throw new BusinessException(ErrorCode.VALIDATION_CONTENT_EMPTY, "父回复不属于该帖子");
+            }
+            parentReplyId = parentReply.getId();
+            if (parentReply.getDepth() >= 2) {
+                depth = parentReply.getDepth(); // max depth reached, stay at same level
+            } else {
+                depth = parentReply.getDepth() + 1;
+            }
+        }
+
+        // 8. Create reply
         String replyId = UUID.randomUUID().toString();
         var reply = new Reply();
         reply.setId(replyId);
@@ -105,19 +122,19 @@ public class ReplyService {
         reply.setContentHtml(renderMarkdownToHtml(dto.content()));
         reply.setAuthorId(userId);
         reply.setPostId(postId);
-        reply.setParentReplyId(null);
-        reply.setDepth(0);
+        reply.setParentReplyId(parentReplyId);
+        reply.setDepth(depth);
         reply.setAuditStatus("approved");
         replyRepo.save(reply);
 
-        // 8. Increment post reply_count
+        // 9. Increment post reply_count
         post.setReplyCount(post.getReplyCount() + 1);
         postRepo.save(post);
 
-        // 9. Set cooldown
+        // 10. Set cooldown
         redis.opsForValue().set(cooldownKey, "1", COOLDOWN_SECONDS, TimeUnit.SECONDS);
 
-        // 10. Cache idempotency result
+        // 11. Cache idempotency result
         try {
             redis.opsForValue().set(idempotencyKey, replyId, IDEMPOTENCY_TTL, TimeUnit.SECONDS);
         } catch (Exception e) {
@@ -132,23 +149,57 @@ public class ReplyService {
         if (limit < 1 || limit > 50) limit = 20;
         var pageable = PageRequest.of(page - 1, limit);
 
-        var repliesPage = replyRepo.findByPostIdAndIsDeletedFalseOrderByCreatedAtAsc(postId, pageable);
+        // 1. Get paginated root replies (parent_reply_id IS NULL)
+        var rootPage = replyRepo.findByPostIdAndIsDeletedFalseAndParentReplyIdIsNullOrderByCreatedAtAsc(postId, pageable);
+        List<Reply> rootReplies = rootPage.getContent();
 
-        var authorIds = repliesPage.getContent().stream()
-                .map(Reply::getAuthorId).distinct().toList();
+        // 2. Collect all relevant replies for tree building
+        List<Reply> allReplies = new ArrayList<>(rootReplies);
+
+        List<String> parentIds = rootReplies.stream().map(Reply::getId).toList();
+        if (!parentIds.isEmpty()) {
+            // Depth 1 children
+            List<Reply> depth1 = replyRepo.findByPostIdAndIsDeletedFalseAndParentReplyIdInOrderByCreatedAtAsc(postId, parentIds);
+            allReplies.addAll(depth1);
+
+            // Depth 2 children
+            List<String> depth1Ids = depth1.stream().map(Reply::getId).toList();
+            if (!depth1Ids.isEmpty()) {
+                List<Reply> depth2 = replyRepo.findByPostIdAndIsDeletedFalseAndParentReplyIdInOrderByCreatedAtAsc(postId, depth1Ids);
+                allReplies.addAll(depth2);
+            }
+        }
+
+        // 3. Batch load all authors
+        var authorIds = allReplies.stream().map(Reply::getAuthorId).distinct().toList();
         var usersById = authorIds.isEmpty() ? Map.<String, com.vibedev.entity.User>of()
                 : userRepo.findAllById(authorIds).stream()
                         .collect(Collectors.toMap(com.vibedev.entity.User::getId, u -> u));
 
-        var items = repliesPage.getContent().stream()
-                .map(r -> {
-                    var author = usersById.get(r.getAuthorId());
-                    // V1.0: all replies are flat, child_replies is always empty
-                    return ReplyResponseMapper.from(r, author, false);
-                })
+        // 4. Build parent→children map
+        Map<String, List<Reply>> childrenByParent = new HashMap<>();
+        for (Reply r : allReplies) {
+            if (r.getParentReplyId() != null) {
+                childrenByParent.computeIfAbsent(r.getParentReplyId(), k -> new ArrayList<>()).add(r);
+            }
+        }
+
+        // 5. Build root items with recursively assembled children
+        var items = rootReplies.stream()
+                .map(r -> buildTree(r, childrenByParent, usersById))
                 .toList();
 
-        return PaginatedResponse.of(items, repliesPage.getTotalElements(), page, limit);
+        return PaginatedResponse.of(items, rootPage.getTotalElements(), page, limit);
+    }
+
+    private ReplyResponse buildTree(Reply reply, Map<String, List<Reply>> childrenByParent,
+                                    Map<String, com.vibedev.entity.User> usersById) {
+        List<Reply> children = childrenByParent.getOrDefault(reply.getId(), List.of());
+        List<ReplyResponse> childResponses = children.stream()
+                .map(child -> buildTree(child, childrenByParent, usersById))
+                .toList();
+        var author = usersById.get(reply.getAuthorId());
+        return ReplyResponseMapper.from(reply, author, false, childResponses);
     }
 
     @Transactional

@@ -5,12 +5,18 @@ import com.vibedev.entity.Reply;
 import com.vibedev.entity.User;
 
 import java.util.Collections;
+import java.util.List;
 
 public final class ReplyResponseMapper {
 
     private ReplyResponseMapper() {}
 
     public static ReplyResponse from(Reply r, User author, boolean isLikedByCurrentUser) {
+        return from(r, author, isLikedByCurrentUser, Collections.emptyList());
+    }
+
+    public static ReplyResponse from(Reply r, User author, boolean isLikedByCurrentUser,
+                                     List<ReplyResponse> childReplies) {
         var authorDto = author != null
                 ? UserSummary.from(author)
                 : new UserSummary("unknown", "unknown", "未知用户", "", 1, "user");
@@ -31,7 +37,7 @@ public final class ReplyResponseMapper {
                 r.getCreatedAt(),
                 r.getUpdatedAt(),
                 r.getLastEditedAt(),
-                Collections.emptyList()
+                childReplies
         );
     }
 }
