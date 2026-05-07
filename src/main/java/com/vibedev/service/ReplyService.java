@@ -43,12 +43,14 @@ public class ReplyService {
     private final NotificationService notificationService;
     private final MuteService muteService;
     private final SensitiveWordService sensitiveWordService;
+    private final ModerationService moderationService;
 
     public ReplyService(ReplyRepository replyRepo, PostRepository postRepo,
                         UserRepository userRepo, StringRedisTemplate redis,
                         NotificationService notificationService,
                         MuteService muteService,
-                        SensitiveWordService sensitiveWordService) {
+                        SensitiveWordService sensitiveWordService,
+                        ModerationService moderationService) {
         this.replyRepo = replyRepo;
         this.postRepo = postRepo;
         this.userRepo = userRepo;
@@ -56,6 +58,7 @@ public class ReplyService {
         this.notificationService = notificationService;
         this.muteService = muteService;
         this.sensitiveWordService = sensitiveWordService;
+        this.moderationService = moderationService;
     }
 
     @Transactional
@@ -138,14 +141,18 @@ public class ReplyService {
         reply.setPostId(postId);
         reply.setParentReplyId(parentReplyId);
         reply.setDepth(depth);
-        reply.setAuditStatus("approved");
+        reply.setAuditStatus("pending");
         replyRepo.save(reply);
 
         // 9. Increment post reply_count
         post.setReplyCount(post.getReplyCount() + 1);
         postRepo.save(post);
 
-        // 9b. Send post_replied notification to post author (if not self-reply)
+        // 9b. Trigger async AI review
+        moderationService.reviewAsync("reply", replyId, dto.content(), userId,
+                null, post.getBoardId());
+
+        // 9c. Send post_replied notification to post author (if not self-reply)
         if (!userId.equals(post.getAuthorId())) {
             String replierName = user.getUsername();
             String postTitle = post.getTitle();
@@ -172,7 +179,8 @@ public class ReplyService {
         return ReplyResponseMapper.from(reply, user, false);
     }
 
-    public PaginatedResponse<ReplyResponse> listByPost(String postId, int page, int limit, String currentUserId) {
+    public PaginatedResponse<ReplyResponse> listByPost(String postId, int page, int limit,
+                                                        String currentUserId, String role) {
         if (page < 1) page = 1;
         if (limit < 1 || limit > 50) limit = 20;
         var pageable = PageRequest.of(page - 1, limit);
@@ -198,16 +206,26 @@ public class ReplyService {
             }
         }
 
+        // Filter by audit status visibility
+        boolean isPrivileged = "admin".equals(role) || "moderator".equals(role);
+        allReplies = allReplies.stream()
+                .filter(r -> isVisible(r, currentUserId, isPrivileged))
+                .toList();
+        rootReplies = rootReplies.stream()
+                .filter(r -> isVisible(r, currentUserId, isPrivileged))
+                .toList();
+
         // 3. Batch load all authors
         var authorIds = allReplies.stream().map(Reply::getAuthorId).distinct().toList();
         var usersById = authorIds.isEmpty() ? Map.<String, com.vibedev.entity.User>of()
                 : userRepo.findAllById(authorIds).stream()
                         .collect(Collectors.toMap(com.vibedev.entity.User::getId, u -> u));
 
-        // 4. Build parent→children map
+        // 4. Build parent→children map (only for visible replies)
         Map<String, List<Reply>> childrenByParent = new HashMap<>();
+        Set<String> visibleIds = allReplies.stream().map(Reply::getId).collect(Collectors.toSet());
         for (Reply r : allReplies) {
-            if (r.getParentReplyId() != null) {
+            if (r.getParentReplyId() != null && visibleIds.contains(r.getParentReplyId())) {
                 childrenByParent.computeIfAbsent(r.getParentReplyId(), k -> new ArrayList<>()).add(r);
             }
         }
@@ -218,6 +236,12 @@ public class ReplyService {
                 .toList();
 
         return PaginatedResponse.of(items, rootPage.getTotalElements(), page, limit);
+    }
+
+    private boolean isVisible(Reply reply, String currentUserId, boolean isPrivileged) {
+        if ("approved".equals(reply.getAuditStatus())) return true;
+        if (isPrivileged) return true;
+        return currentUserId != null && currentUserId.equals(reply.getAuthorId());
     }
 
     private ReplyResponse buildTree(Reply reply, Map<String, List<Reply>> childrenByParent,

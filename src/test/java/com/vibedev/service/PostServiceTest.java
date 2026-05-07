@@ -41,6 +41,7 @@ class PostServiceTest {
     @Mock NotificationService notificationService;
     @Mock MuteService muteService;
     @Mock SensitiveWordService sensitiveWordService;
+    @Mock ModerationService moderationService;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
@@ -52,7 +53,8 @@ class PostServiceTest {
     void setUp() {
         postService = new PostService(postRepo, postTagRepo, tagRepo, userRepo,
                 boardRepo, favoriteRepo, collectionFolderRepo, likeRepo,
-                notificationService, muteService, sensitiveWordService, redis, objectMapper);
+                notificationService, muteService, sensitiveWordService,
+                moderationService, redis, objectMapper);
         when(redis.opsForValue()).thenReturn(valueOps);
         when(muteService.isUserBanned(anyString())).thenReturn(false);
         when(sensitiveWordService.hasSensitiveWord(anyString())).thenReturn(false);

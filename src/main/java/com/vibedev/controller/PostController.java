@@ -126,7 +126,8 @@ public class PostController {
             @RequestParam(defaultValue = "20") int limit,
             Authentication auth) {
         String currentUserId = SecurityHelper.getUserId(auth);
-        return ApiResponse.ok(replyService.listByPost(id, page, limit, currentUserId));
+        String role = SecurityHelper.getRole(auth);
+        return ApiResponse.ok(replyService.listByPost(id, page, limit, currentUserId, role));
     }
 
     @PostMapping("/posts/{id}/replies")

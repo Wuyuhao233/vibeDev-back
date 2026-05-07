@@ -42,13 +42,14 @@ class ReplyServiceTest {
     @Mock NotificationService notificationService;
     @Mock MuteService muteService;
     @Mock SensitiveWordService sensitiveWordService;
+    @Mock ModerationService moderationService;
 
     @InjectMocks ReplyService replyService;
 
     @BeforeEach
     void setUp() {
         replyService = new ReplyService(replyRepo, postRepo, userRepo, redis,
-                notificationService, muteService, sensitiveWordService);
+                notificationService, muteService, sensitiveWordService, moderationService);
         when(redis.opsForValue()).thenReturn(valueOps);
         when(muteService.isUserBanned(anyString())).thenReturn(false);
         when(sensitiveWordService.hasSensitiveWord(anyString())).thenReturn(false);
@@ -206,7 +207,7 @@ class ReplyServiceTest {
                 .thenReturn(List.of());
         when(userRepo.findAllById(List.of("u2"))).thenReturn(List.of(author));
 
-        var result = replyService.listByPost("p1", 1, 20, null);
+        var result = replyService.listByPost("p1", 1, 20, null, "user");
 
         assertEquals(1, result.items().size());
         assertEquals("Nice post!", result.items().get(0).contentMarkdown());
@@ -219,7 +220,7 @@ class ReplyServiceTest {
         when(replyRepo.findByPostIdAndIsDeletedFalseAndParentReplyIdIsNullOrderByCreatedAtAsc(eq("p1"), any()))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        var result = replyService.listByPost("p1", 1, 20, null);
+        var result = replyService.listByPost("p1", 1, 20, null, "user");
 
         assertEquals(0, result.items().size());
         assertEquals(0, result.total());
@@ -268,7 +269,7 @@ class ReplyServiceTest {
                 .thenReturn(List.of(grandchildReply));
         when(userRepo.findAllById(List.of("u2", "u3", "u4"))).thenReturn(List.of(author2, author3, author4));
 
-        var result = replyService.listByPost("p1", 1, 20, null);
+        var result = replyService.listByPost("p1", 1, 20, null, "user");
 
         assertEquals(1, result.items().size());
         var root = result.items().get(0);

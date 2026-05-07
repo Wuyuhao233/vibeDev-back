@@ -62,6 +62,7 @@ public class PostService {
     private final NotificationService notificationService;
     private final MuteService muteService;
     private final SensitiveWordService sensitiveWordService;
+    private final ModerationService moderationService;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
@@ -76,6 +77,7 @@ public class PostService {
                        NotificationService notificationService,
                        MuteService muteService,
                        SensitiveWordService sensitiveWordService,
+                       ModerationService moderationService,
                        org.springframework.data.redis.core.StringRedisTemplate redis,
                        com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.postRepo = postRepo;
@@ -89,6 +91,7 @@ public class PostService {
         this.notificationService = notificationService;
         this.muteService = muteService;
         this.sensitiveWordService = sensitiveWordService;
+        this.moderationService = moderationService;
         this.redis = redis;
         this.objectMapper = objectMapper;
     }
@@ -171,7 +174,7 @@ public class PostService {
         post.setAuthorId(userId);
         post.setBoardId(dto.boardId());
         post.setCoverImageUrl(dto.coverImageUrl());
-        post.setAuditStatus("approved");
+        post.setAuditStatus("pending");
         post.setContentLength(dto.content().length());
         post.setHasCodeBlock(dto.content().contains("```"));
         postRepo.save(post);
@@ -184,6 +187,10 @@ public class PostService {
             pt.setTagId(tagId);
             postTagRepo.save(pt);
         }
+
+        // 10b. Trigger async AI review
+        moderationService.reviewAsync("post", postId, dto.content(), userId,
+                dto.title(), dto.boardId());
 
         // 11. Award points (+5)
         user.setPoints(user.getPoints() + 5);
@@ -216,12 +223,13 @@ public class PostService {
                 throw new BusinessException(ErrorCode.POST_DELETED, "该帖子已被删除");
             }
         }
-        if ("rejected".equals(post.getAuditStatus())) {
+        if ("rejected".equals(post.getAuditStatus()) || "pending".equals(post.getAuditStatus()) ||
+            "pending_review".equals(post.getAuditStatus())) {
             boolean canView = currentUserId != null &&
                     (currentUserId.equals(post.getAuthorId()) ||
                      "admin".equals(role) || "moderator".equals(role));
             if (!canView) {
-                throw new BusinessException(ErrorCode.FORBIDDEN, "内容不可见");
+                throw new BusinessException(ErrorCode.FORBIDDEN, "内容审核中，暂不可见");
             }
         }
 

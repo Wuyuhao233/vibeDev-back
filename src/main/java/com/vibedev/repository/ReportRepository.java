@@ -26,4 +26,6 @@ public interface ReportRepository extends JpaRepository<Report, String> {
     long countByReporterIdAndIsMaliciousTrue(String reporterId);
 
     List<Report> findByTargetTypeAndTargetIdAndStatus(String targetType, String targetId, String status);
+
+    long countByStatusAndProcessedAtAfter(String status, java.time.Instant since);
 }
