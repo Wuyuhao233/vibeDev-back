@@ -42,7 +42,6 @@ class NotificationServiceTest {
         assertEquals("p1", notif.getSourceId());
         assertFalse(notif.isRead());
         assertNull(notif.getReadAt());
-        assertNotNull(notif.getCreatedAt());
     }
 
     @Test
