@@ -10,4 +10,8 @@ public interface PostTagRepository extends JpaRepository<PostTag, String> {
     List<PostTag> findByPostId(String postId);
 
     List<PostTag> findByPostIdIn(List<String> postIds);
+
+    List<PostTag> findByTagIdIn(List<String> tagIds);
+
+    List<PostTag> findByPostIdInAndTagIdIn(List<String> postIds, List<String> tagIds);
 }

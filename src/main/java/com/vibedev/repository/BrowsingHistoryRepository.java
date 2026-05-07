@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 public interface BrowsingHistoryRepository extends JpaRepository<BrowsingHistory, String> {
@@ -27,4 +28,7 @@ public interface BrowsingHistoryRepository extends JpaRepository<BrowsingHistory
     @Query("DELETE FROM BrowsingHistory bh WHERE bh.userId = :userId AND bh.id NOT IN " +
            "(SELECT b.id FROM BrowsingHistory b WHERE b.userId = :userId ORDER BY b.viewedAt DESC)")
     int deleteExcessRecords(String userId, int maxRecords);
+
+    @Query("SELECT bh.postId FROM BrowsingHistory bh WHERE bh.userId = :userId AND bh.viewedAt >= :since")
+    List<String> findPostIdsByUserIdAndViewedAtAfter(String userId, Instant since);
 }
