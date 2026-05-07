@@ -36,6 +36,7 @@ class PostServiceTest {
     @Mock UserRepository userRepo;
     @Mock BoardRepository boardRepo;
     @Mock FavoriteRepository favoriteRepo;
+    @Mock CollectionFolderRepository collectionFolderRepo;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
@@ -46,7 +47,7 @@ class PostServiceTest {
     @BeforeEach
     void setUp() {
         postService = new PostService(postRepo, postTagRepo, tagRepo, userRepo,
-                boardRepo, favoriteRepo, redis, objectMapper);
+                boardRepo, favoriteRepo, collectionFolderRepo, redis, objectMapper);
         when(redis.opsForValue()).thenReturn(valueOps);
     }
 
@@ -170,9 +171,11 @@ class PostServiceTest {
     @Test
     void create_shouldFailOnRateLimit() {
         var user = createUser("u1", "user", 2);
+        var board = createBoard("b1", "Frontend");
         var dto = new CreatePostRequest("b1", List.of("t1"), "Hello World Post", "content", null, "idem-key");
 
         when(userRepo.findById("u1")).thenReturn(Optional.of(user));
+        when(boardRepo.findByIdAndIsDeletedFalse("b1")).thenReturn(Optional.of(board));
         when(redis.opsForValue().increment(contains("rate"))).thenReturn(4L);
 
         var ex = assertThrows(BusinessException.class, () -> postService.create(dto, "u1"));
@@ -182,9 +185,11 @@ class PostServiceTest {
     @Test
     void create_shouldFailOnLv1DailyLimit() {
         var user = createUser("u1", "user", 1);
+        var board = createBoard("b1", "Frontend");
         var dto = new CreatePostRequest("b1", List.of("t1"), "Hello World Post", "content", null, "idem-key");
 
         when(userRepo.findById("u1")).thenReturn(Optional.of(user));
+        when(boardRepo.findByIdAndIsDeletedFalse("b1")).thenReturn(Optional.of(board));
         when(redis.opsForValue().increment(contains("rate"))).thenReturn(1L);
         when(redis.opsForValue().increment(contains("daily"))).thenReturn(6L);
 
@@ -590,7 +595,7 @@ class PostServiceTest {
         when(postRepo.findByIdAndIsDeletedFalse("p1")).thenReturn(Optional.of(post));
         when(favoriteRepo.findByUserIdAndPostId("u2", "p1")).thenReturn(Optional.empty());
 
-        var result = postService.collect("p1", "u2");
+        var result = postService.collect("p1", "u2", null);
 
         assertTrue(result.collected());
         assertEquals(1, result.newCount());
@@ -610,7 +615,7 @@ class PostServiceTest {
         when(favoriteRepo.findByUserIdAndPostId("u2", "p1"))
                 .thenReturn(Optional.of(new Favorite()));
 
-        var ex = assertThrows(BusinessException.class, () -> postService.collect("p1", "u2"));
+        var ex = assertThrows(BusinessException.class, () -> postService.collect("p1", "u2", null));
         assertEquals(ErrorCode.DUPLICATE_SUBMIT.getCode(), ex.getCode());
     }
 
@@ -618,7 +623,7 @@ class PostServiceTest {
     void collect_shouldFailWhenPostNotFound() {
         when(postRepo.findByIdAndIsDeletedFalse("p999")).thenReturn(Optional.empty());
 
-        var ex = assertThrows(BusinessException.class, () -> postService.collect("p999", "u1"));
+        var ex = assertThrows(BusinessException.class, () -> postService.collect("p999", "u1", null));
         assertEquals(ErrorCode.NOT_FOUND.getCode(), ex.getCode());
     }
 
@@ -692,6 +697,60 @@ class PostServiceTest {
         when(postRepo.findByIdAndIsDeletedFalse("p999")).thenReturn(Optional.empty());
 
         var ex = assertThrows(BusinessException.class, () -> postService.getShareCard("p999"));
+        assertEquals(ErrorCode.NOT_FOUND.getCode(), ex.getCode());
+    }
+
+    // ─── V1.2: collect with folder ──────────────────────────
+
+    @Test
+    void collect_withFolderId_shouldSucceed() {
+        var post = new Post();
+        post.setId("p1");
+        post.setTitle("Title");
+        post.setAuthorId("u1");
+        post.setBoardId("b1");
+        post.setCollectCount(0);
+
+        var folder = new CollectionFolder();
+        folder.setId("f1");
+        folder.setUserId("u2");
+        folder.setName("My Folder");
+
+        when(postRepo.findByIdAndIsDeletedFalse("p1")).thenReturn(Optional.of(post));
+        when(collectionFolderRepo.findByIdAndUserId("f1", "u2")).thenReturn(Optional.of(folder));
+        when(favoriteRepo.findByUserIdAndPostId("u2", "p1")).thenReturn(Optional.empty());
+
+        var result = postService.collect("p1", "u2", "f1");
+
+        assertTrue(result.collected());
+        assertEquals(1, result.newCount());
+        verify(favoriteRepo).save(any(Favorite.class));
+        verify(postRepo).save(post);
+    }
+
+    @Test
+    void collect_shouldFailWhenFolderNotFound() {
+        var post = new Post();
+        post.setId("p1");
+        post.setTitle("Title");
+        post.setAuthorId("u1");
+        post.setBoardId("b1");
+
+        when(postRepo.findByIdAndIsDeletedFalse("p1")).thenReturn(Optional.of(post));
+        when(collectionFolderRepo.findByIdAndUserId("f999", "u2")).thenReturn(Optional.empty());
+
+        var ex = assertThrows(BusinessException.class, () -> postService.collect("p1", "u2", "f999"));
+        assertEquals(ErrorCode.NOT_FOUND.getCode(), ex.getCode());
+    }
+
+    // ─── V1.2: share card generation ────────────────────────
+
+    @Test
+    void generateShareCard_shouldThrowWhenPostNotFound() {
+        when(postRepo.findByIdAndIsDeletedFalse("p999")).thenReturn(Optional.empty());
+
+        var ex = assertThrows(BusinessException.class,
+                () -> postService.generateShareCard("p999"));
         assertEquals(ErrorCode.NOT_FOUND.getCode(), ex.getCode());
     }
 }

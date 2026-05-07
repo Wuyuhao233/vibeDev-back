@@ -93,9 +93,11 @@ public class PostController {
 
     @PostMapping("/posts/{id}/collect")
     public ApiResponse<CollectToggleResponse> collectPost(@PathVariable String id,
+                                                           @RequestBody(required = false) CollectRequest body,
                                                            Authentication auth) {
         String userId = SecurityHelper.getUserId(auth);
-        return ApiResponse.ok(postService.collect(id, userId));
+        String folderId = body != null ? body.folderId() : null;
+        return ApiResponse.ok(postService.collect(id, userId, folderId));
     }
 
     @DeleteMapping("/posts/{id}/collect")
@@ -108,6 +110,11 @@ public class PostController {
     @GetMapping("/posts/{id}/share-card")
     public ApiResponse<ShareCardResponse> shareCard(@PathVariable String id) {
         return ApiResponse.ok(postService.getShareCard(id));
+    }
+
+    @PostMapping("/posts/{id}/share-card/generate")
+    public ApiResponse<ShareCardGenerateResponse> generateShareCard(@PathVariable String id) {
+        return ApiResponse.ok(postService.generateShareCard(id));
     }
 
     // ─── Replies ──────────────────────────────────────────

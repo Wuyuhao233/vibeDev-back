@@ -10,13 +10,31 @@ import com.vibedev.entity.*;
 import com.vibedev.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.imageio.ImageIO;
+import java.awt.BasicStroke;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.GradientPaint;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.font.FontRenderContext;
+import java.awt.geom.Rectangle2D;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -39,12 +57,17 @@ public class PostService {
     private final UserRepository userRepo;
     private final BoardRepository boardRepo;
     private final FavoriteRepository favoriteRepo;
+    private final CollectionFolderRepository collectionFolderRepo;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    @Value("${app.upload.path:./uploads}")
+    private String uploadPath;
 
     public PostService(PostRepository postRepo, PostTagRepository postTagRepo,
                        TagRepository tagRepo, UserRepository userRepo,
                        BoardRepository boardRepo, FavoriteRepository favoriteRepo,
+                       CollectionFolderRepository collectionFolderRepo,
                        org.springframework.data.redis.core.StringRedisTemplate redis,
                        com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.postRepo = postRepo;
@@ -53,6 +76,7 @@ public class PostService {
         this.userRepo = userRepo;
         this.boardRepo = boardRepo;
         this.favoriteRepo = favoriteRepo;
+        this.collectionFolderRepo = collectionFolderRepo;
         this.redis = redis;
         this.objectMapper = objectMapper;
     }
@@ -350,11 +374,17 @@ public class PostService {
     }
 
     @Transactional
-    public CollectToggleResponse collect(String postId, String userId) {
+    public CollectToggleResponse collect(String postId, String userId, String folderId) {
         var post = postRepo.findByIdAndIsDeletedFalse(postId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "帖子不存在"));
         if (post.isDeleted()) {
             throw new BusinessException(ErrorCode.POST_DELETED, "该帖子已被删除");
+        }
+
+        // Validate folder ownership if provided
+        if (folderId != null) {
+            var folder = collectionFolderRepo.findByIdAndUserId(folderId, userId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "收藏夹不存在"));
         }
 
         var existing = favoriteRepo.findByUserIdAndPostId(userId, postId);
@@ -366,6 +396,7 @@ public class PostService {
         fav.setId(UUID.randomUUID().toString());
         fav.setUserId(userId);
         fav.setPostId(postId);
+        fav.setCollectionFolderId(folderId);
         favoriteRepo.save(fav);
 
         post.setCollectCount(post.getCollectCount() + 1);
@@ -418,6 +449,186 @@ public class PostService {
                 authorName,
                 "/post/" + postId
         );
+    }
+
+    public ShareCardGenerateResponse generateShareCard(String postId) {
+        var post = postRepo.findByIdAndIsDeletedFalse(postId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "帖子不存在"));
+
+        String description = extractPlainText(post.getContentMarkdown());
+        var author = userRepo.findById(post.getAuthorId()).orElse(null);
+        String authorName = author != null ? author.getUsername() : "unknown";
+
+        try {
+            String filename = postId + "_" + Instant.now().toEpochMilli() + ".png";
+            String dateDir = LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy/MM"));
+            Path dir = Paths.get(uploadPath, "share-cards", dateDir);
+            Files.createDirectories(dir);
+
+            BufferedImage card = renderShareCard(post.getTitle(), description,
+                    post.getCoverImageUrl(), authorName);
+            Path filePath = dir.resolve(filename);
+            ImageIO.write(card, "png", filePath.toFile());
+
+            String imageUrl = "/uploads/share-cards/" + dateDir + "/" + filename;
+            return new ShareCardGenerateResponse(imageUrl, 1200, 630);
+        } catch (IOException e) {
+            log.error("Failed to generate share card for post {}", postId, e);
+            throw new BusinessException(10000, "分享卡片生成失败");
+        }
+    }
+
+    private BufferedImage renderShareCard(String title, String description,
+                                           String coverUrl, String authorName) throws IOException {
+        int width = 1200;
+        int height = 630;
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+
+        // Enable anti-aliasing
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+        // Background gradient
+        GradientPaint bgGradient = new GradientPaint(0, 0, new Color(30, 30, 50),
+                width, height, new Color(15, 15, 35));
+        g.setPaint(bgGradient);
+        g.fillRect(0, 0, width, height);
+
+        // Left content area
+        int contentX = 60;
+        int contentY = 60;
+        int contentWidth = 740;
+
+        // Cover image (if available) - top right area
+        if (coverUrl != null && !coverUrl.isBlank()) {
+            try {
+                BufferedImage cover = readImage(coverUrl);
+                if (cover != null) {
+                    int coverH = 280;
+                    int coverW = 420;
+                    int coverX = width - coverW - 60;
+                    int coverY = 60;
+                    g.drawImage(cover, coverX, coverY, coverW, coverH, null);
+                    // Rounded border
+                    g.setColor(new Color(255, 255, 255, 40));
+                    g.setStroke(new BasicStroke(2));
+                    g.drawRoundRect(coverX, coverY, coverW, coverH, 16, 16);
+                }
+            } catch (Exception e) {
+                log.debug("Failed to load cover image: {}", e.getMessage());
+            }
+        }
+
+        // Title
+        g.setColor(Color.WHITE);
+        Font titleFont = new Font("SansSerif", Font.BOLD, 42);
+        g.setFont(titleFont);
+        List<String> titleLines = wrapText(title, titleFont, g, contentWidth);
+        int lineY = contentY + 50;
+        for (String line : titleLines) {
+            if (lineY > contentY + 200) break; // max 3 lines
+            g.drawString(line, contentX, lineY);
+            lineY += 56;
+        }
+
+        // Description
+        if (description != null && !description.isBlank()) {
+            g.setColor(new Color(200, 200, 220));
+            Font descFont = new Font("SansSerif", Font.PLAIN, 24);
+            g.setFont(descFont);
+            List<String> descLines = wrapText(description, descFont, g, contentWidth);
+            lineY += 20;
+            for (int i = 0; i < Math.min(descLines.size(), 4); i++) {
+                g.drawString(descLines.get(i), contentX, lineY);
+                lineY += 34;
+            }
+        }
+
+        // Author name
+        g.setColor(new Color(150, 150, 180));
+        g.setFont(new Font("SansSerif", Font.PLAIN, 20));
+        g.drawString("— " + authorName, contentX, height - 80);
+
+        // QR placeholder (bottom right)
+        int qrSize = 120;
+        int qrX = width - qrSize - 80;
+        int qrY = height - qrSize - 80;
+        g.setColor(new Color(255, 255, 255, 30));
+        g.fillRoundRect(qrX - 10, qrY - 10, qrSize + 20, qrSize + 20, 12, 12);
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("SansSerif", Font.PLAIN, 14));
+        g.drawString("扫码查看", qrX + 28, qrY - 20);
+        // Simple QR pattern
+        drawQrPlaceholder(g, qrX, qrY, qrSize);
+
+        g.dispose();
+        return image;
+    }
+
+    private void drawQrPlaceholder(Graphics2D g, int x, int y, int size) {
+        int modules = 7;
+        int moduleSize = size / modules;
+        g.setColor(new Color(255, 255, 255, 80));
+        for (int r = 0; r < modules; r++) {
+            for (int c = 0; c < modules; c++) {
+                if ((r * modules + c) % 3 != 0) {
+                    g.fillRect(x + c * moduleSize, y + r * moduleSize, moduleSize, moduleSize);
+                }
+            }
+        }
+    }
+
+    private List<String> wrapText(String text, Font font, Graphics2D g, int maxWidth) {
+        List<String> lines = new ArrayList<>();
+        FontRenderContext frc = g.getFontRenderContext();
+        String[] words = text.split("");
+        StringBuilder line = new StringBuilder();
+        for (String ch : words) {
+            String test = line + ch;
+            Rectangle2D bounds = font.getStringBounds(test, frc);
+            if (bounds.getWidth() > maxWidth && !line.isEmpty()) {
+                lines.add(line.toString());
+                line = new StringBuilder(ch);
+            } else {
+                line.append(ch);
+            }
+        }
+        if (!line.isEmpty()) {
+            lines.add(line.toString());
+        }
+        return lines;
+    }
+
+    private BufferedImage readImage(String urlStr) {
+        try {
+            if (urlStr.startsWith("http")) {
+                try (InputStream in = new URL(urlStr).openStream()) {
+                    return ImageIO.read(in);
+                }
+            } else {
+                Path p = Paths.get(uploadPath, urlStr.replace("/uploads/", ""));
+                if (Files.exists(p)) {
+                    return ImageIO.read(p.toFile());
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Cannot read image from {}: {}", urlStr, e.getMessage());
+        }
+        return null;
+    }
+
+    private String extractPlainText(String markdown) {
+        if (markdown == null) return "";
+        String plain = markdown
+                .replaceAll("```[\\s\\S]*?```", " ")
+                .replaceAll("`[^`]*`", " ")
+                .replaceAll("!\\[.*?]\\(.*?\\)", " ")
+                .replaceAll("\\[([^]]*)]\\(.*?\\)", "$1")
+                .replaceAll("[*#>`~|_\\-]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return plain.length() > 200 ? plain.substring(0, 200) : plain;
     }
 
     // ─── Helpers ──────────────────────────────────────────
