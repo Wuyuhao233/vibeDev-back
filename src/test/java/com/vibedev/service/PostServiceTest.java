@@ -39,6 +39,8 @@ class PostServiceTest {
     @Mock CollectionFolderRepository collectionFolderRepo;
     @Mock LikeRepository likeRepo;
     @Mock NotificationService notificationService;
+    @Mock MuteService muteService;
+    @Mock SensitiveWordService sensitiveWordService;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
@@ -50,8 +52,10 @@ class PostServiceTest {
     void setUp() {
         postService = new PostService(postRepo, postTagRepo, tagRepo, userRepo,
                 boardRepo, favoriteRepo, collectionFolderRepo, likeRepo,
-                notificationService, redis, objectMapper);
+                notificationService, muteService, sensitiveWordService, redis, objectMapper);
         when(redis.opsForValue()).thenReturn(valueOps);
+        when(muteService.isUserBanned(anyString())).thenReturn(false);
+        when(sensitiveWordService.hasSensitiveWord(anyString())).thenReturn(false);
     }
 
     private User createUser(String id, String role, int level) {
@@ -150,6 +154,7 @@ class PostServiceTest {
         var dto = new CreatePostRequest("b1", List.of("t1"), "Hello World Post", "content", null, "idem-key");
 
         when(userRepo.findById("u1")).thenReturn(Optional.of(user));
+        when(muteService.isUserBanned("u1")).thenReturn(true);
 
         var ex = assertThrows(BusinessException.class, () -> postService.create(dto, "u1"));
         assertEquals(ErrorCode.BANNED.getCode(), ex.getCode());

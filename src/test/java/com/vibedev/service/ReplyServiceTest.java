@@ -40,13 +40,18 @@ class ReplyServiceTest {
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
     @Mock NotificationService notificationService;
+    @Mock MuteService muteService;
+    @Mock SensitiveWordService sensitiveWordService;
 
     @InjectMocks ReplyService replyService;
 
     @BeforeEach
     void setUp() {
-        replyService = new ReplyService(replyRepo, postRepo, userRepo, redis, notificationService);
+        replyService = new ReplyService(replyRepo, postRepo, userRepo, redis,
+                notificationService, muteService, sensitiveWordService);
         when(redis.opsForValue()).thenReturn(valueOps);
+        when(muteService.isUserBanned(anyString())).thenReturn(false);
+        when(sensitiveWordService.hasSensitiveWord(anyString())).thenReturn(false);
     }
 
     private User createUser(String id, String role, int level) {
@@ -117,6 +122,7 @@ class ReplyServiceTest {
         var dto = new CreateReplyRequest("Great post!", null, "idem-key");
 
         when(userRepo.findById("u2")).thenReturn(Optional.of(user));
+        when(muteService.isUserBanned("u2")).thenReturn(true);
 
         var ex = assertThrows(BusinessException.class,
                 () -> replyService.create("p1", dto, "u2"));

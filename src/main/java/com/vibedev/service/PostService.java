@@ -60,6 +60,8 @@ public class PostService {
     private final CollectionFolderRepository collectionFolderRepo;
     private final LikeRepository likeRepo;
     private final NotificationService notificationService;
+    private final MuteService muteService;
+    private final SensitiveWordService sensitiveWordService;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
@@ -72,6 +74,8 @@ public class PostService {
                        CollectionFolderRepository collectionFolderRepo,
                        LikeRepository likeRepo,
                        NotificationService notificationService,
+                       MuteService muteService,
+                       SensitiveWordService sensitiveWordService,
                        org.springframework.data.redis.core.StringRedisTemplate redis,
                        com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.postRepo = postRepo;
@@ -83,6 +87,8 @@ public class PostService {
         this.collectionFolderRepo = collectionFolderRepo;
         this.likeRepo = likeRepo;
         this.notificationService = notificationService;
+        this.muteService = muteService;
+        this.sensitiveWordService = sensitiveWordService;
         this.redis = redis;
         this.objectMapper = objectMapper;
     }
@@ -110,7 +116,7 @@ public class PostService {
         // 3. Check user
         var user = userRepo.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "用户不存在"));
-        if (user.isBanned()) {
+        if (muteService.isUserBanned(userId)) {
             throw new BusinessException(ErrorCode.BANNED, "您已被禁言");
         }
 
@@ -149,7 +155,13 @@ public class PostService {
                     "该版块已存在相同标题的帖子");
         }
 
-        // 8. Create post
+        // 8. Sensitive word check
+        if (sensitiveWordService.hasSensitiveWord(dto.title()) ||
+            sensitiveWordService.hasSensitiveWord(dto.content())) {
+            throw new BusinessException(ErrorCode.VALIDATION_SENSITIVE_WORD, "内容包含敏感词，请修改");
+        }
+
+        // 9. Create post
         String postId = UUID.randomUUID().toString();
         var post = new Post();
         post.setId(postId);
@@ -164,7 +176,7 @@ public class PostService {
         post.setHasCodeBlock(dto.content().contains("```"));
         postRepo.save(post);
 
-        // 9. Create post_tags
+        // 10. Create post_tags
         for (String tagId : dto.tagIds()) {
             var pt = new PostTag();
             pt.setId(UUID.randomUUID().toString());
@@ -173,11 +185,11 @@ public class PostService {
             postTagRepo.save(pt);
         }
 
-        // 10. Award points (+5)
+        // 11. Award points (+5)
         user.setPoints(user.getPoints() + 5);
         userRepo.save(user);
 
-        // 11. Cache idempotency result
+        // 12. Cache idempotency result
         try {
             redis.opsForValue().set(idempotencyKey, postId, IDEMPOTENCY_TTL, TimeUnit.SECONDS);
         } catch (Exception e) {
@@ -263,6 +275,12 @@ public class PostService {
                 pt.setTagId(tagId);
                 postTagRepo.save(pt);
             }
+        }
+
+        // Sensitive word check on updated title/content
+        if ((dto.title() != null && sensitiveWordService.hasSensitiveWord(dto.title())) ||
+            (dto.content() != null && sensitiveWordService.hasSensitiveWord(dto.content()))) {
+            throw new BusinessException(ErrorCode.VALIDATION_SENSITIVE_WORD, "内容包含敏感词，请修改");
         }
 
         post.setLastEditedAt(Instant.now());

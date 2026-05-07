@@ -41,15 +41,21 @@ public class ReplyService {
     private final UserRepository userRepo;
     private final StringRedisTemplate redis;
     private final NotificationService notificationService;
+    private final MuteService muteService;
+    private final SensitiveWordService sensitiveWordService;
 
     public ReplyService(ReplyRepository replyRepo, PostRepository postRepo,
                         UserRepository userRepo, StringRedisTemplate redis,
-                        NotificationService notificationService) {
+                        NotificationService notificationService,
+                        MuteService muteService,
+                        SensitiveWordService sensitiveWordService) {
         this.replyRepo = replyRepo;
         this.postRepo = postRepo;
         this.userRepo = userRepo;
         this.redis = redis;
         this.notificationService = notificationService;
+        this.muteService = muteService;
+        this.sensitiveWordService = sensitiveWordService;
     }
 
     @Transactional
@@ -69,8 +75,13 @@ public class ReplyService {
         // 3. Check user
         var user = userRepo.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "用户不存在"));
-        if (user.isBanned()) {
+        if (muteService.isUserBanned(userId)) {
             throw new BusinessException(ErrorCode.BANNED, "您已被禁言");
+        }
+
+        // 3b. Sensitive word check
+        if (sensitiveWordService.hasSensitiveWord(dto.content())) {
+            throw new BusinessException(ErrorCode.VALIDATION_SENSITIVE_WORD, "内容包含敏感词，请修改");
         }
 
         // 4. Check post exists
@@ -233,6 +244,10 @@ public class ReplyService {
 
         if (dto.content() == null || dto.content().isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_CONTENT_EMPTY, "请输入回复内容");
+        }
+
+        if (sensitiveWordService.hasSensitiveWord(dto.content())) {
+            throw new BusinessException(ErrorCode.VALIDATION_SENSITIVE_WORD, "内容包含敏感词，请修改");
         }
 
         reply.setContentMarkdown(dto.content());
