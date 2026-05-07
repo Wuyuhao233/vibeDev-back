@@ -10,12 +10,22 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 public interface PostRepository extends JpaRepository<Post, String> {
+
+    Optional<Post> findByIdAndIsDeletedFalse(String id);
 
     Page<Post> findByAuthorIdAndIsDeletedFalseOrderByCreatedAtDesc(String authorId, Pageable pageable);
 
     Page<Post> findByAuthorIdOrderByCreatedAtDesc(String authorId, Pageable pageable);
+
+    int countByTitleAndBoardIdAndIsDeletedFalse(String title, String boardId);
+
+    int countByAuthorIdAndCreatedAtAfter(String authorId, Instant since);
+
+    @Query("SELECT COUNT(p) FROM Post p WHERE p.authorId = :authorId AND p.createdAt >= :since")
+    int countByAuthorIdSince(@Param("authorId") String authorId, @Param("since") Instant since);
 
     // Board posts: default hot sort (by heat_score DESC)
     @Query("SELECT p FROM Post p WHERE p.boardId = :boardId AND p.isDeleted = false AND p.auditStatus = 'approved'" +

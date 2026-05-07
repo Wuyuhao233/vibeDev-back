@@ -17,6 +17,9 @@ public class Post {
     @Column(name = "content_markdown", columnDefinition = "MEDIUMTEXT")
     private String contentMarkdown;
 
+    @Column(name = "content_html", columnDefinition = "MEDIUMTEXT")
+    private String contentHtml;
+
     @Column(name = "author_id", nullable = false, length = 36)
     private String authorId;
 
@@ -35,8 +38,14 @@ public class Post {
     @Column(name = "is_pinned")
     private boolean isPinned = false;
 
+    @Column(name = "pin_type", length = 10)
+    private String pinType = "none";
+
     @Column(name = "is_essence")
     private boolean isEssence = false;
+
+    @Column(name = "share_count")
+    private int shareCount = 0;
 
     @Column(name = "audit_status", length = 10)
     private String auditStatus = "approved";
@@ -46,6 +55,9 @@ public class Post {
 
     @Column(name = "deleted_at")
     private Instant deletedAt;
+
+    @Column(name = "deleted_by", length = 36)
+    private String deletedBy;
 
     @Column(name = "last_edited_at")
     private Instant lastEditedAt;
@@ -71,12 +83,25 @@ public class Post {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    @PrePersist
+    void onCreate() {
+        createdAt = Instant.now();
+        updatedAt = Instant.now();
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = Instant.now();
+    }
+
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
     public String getContentMarkdown() { return contentMarkdown; }
     public void setContentMarkdown(String contentMarkdown) { this.contentMarkdown = contentMarkdown; }
+    public String getContentHtml() { return contentHtml; }
+    public void setContentHtml(String contentHtml) { this.contentHtml = contentHtml; }
     public String getAuthorId() { return authorId; }
     public void setAuthorId(String authorId) { this.authorId = authorId; }
     public String getBoardId() { return boardId; }
@@ -89,14 +114,20 @@ public class Post {
     public void setCollectCount(int collectCount) { this.collectCount = collectCount; }
     public boolean isPinned() { return isPinned; }
     public void setPinned(boolean pinned) { isPinned = pinned; }
+    public String getPinType() { return pinType; }
+    public void setPinType(String pinType) { this.pinType = pinType; }
     public boolean isEssence() { return isEssence; }
     public void setEssence(boolean essence) { isEssence = essence; }
+    public int getShareCount() { return shareCount; }
+    public void setShareCount(int shareCount) { this.shareCount = shareCount; }
     public String getAuditStatus() { return auditStatus; }
     public void setAuditStatus(String auditStatus) { this.auditStatus = auditStatus; }
     public boolean isDeleted() { return isDeleted; }
     public void setDeleted(boolean deleted) { isDeleted = deleted; }
     public Instant getDeletedAt() { return deletedAt; }
     public void setDeletedAt(Instant deletedAt) { this.deletedAt = deletedAt; }
+    public String getDeletedBy() { return deletedBy; }
+    public void setDeletedBy(String deletedBy) { this.deletedBy = deletedBy; }
     public Instant getLastEditedAt() { return lastEditedAt; }
     public void setLastEditedAt(Instant lastEditedAt) { this.lastEditedAt = lastEditedAt; }
     public double getHeatScore() { return heatScore; }
@@ -110,4 +141,7 @@ public class Post {
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+    public int getVersion() { return version; }
+    public void setVersion(int version) { this.version = version; }
 }
