@@ -25,12 +25,13 @@ class MuteServiceTest {
     @Mock MuteRecordRepository muteRecordRepo;
     @Mock UserRepository userRepo;
     @Mock NotificationService notificationService;
+    @Mock PointsService pointsService;
 
     private MuteService muteService;
 
     @BeforeEach
     void setUp() {
-        muteService = new MuteService(muteRecordRepo, userRepo, notificationService);
+        muteService = new MuteService(muteRecordRepo, userRepo, notificationService, pointsService);
     }
 
     private User createUser(String id, String role) {

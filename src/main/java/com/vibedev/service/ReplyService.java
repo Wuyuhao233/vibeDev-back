@@ -44,13 +44,15 @@ public class ReplyService {
     private final MuteService muteService;
     private final SensitiveWordService sensitiveWordService;
     private final ModerationService moderationService;
+    private final PointsService pointsService;
 
     public ReplyService(ReplyRepository replyRepo, PostRepository postRepo,
                         UserRepository userRepo, StringRedisTemplate redis,
                         NotificationService notificationService,
                         MuteService muteService,
                         SensitiveWordService sensitiveWordService,
-                        ModerationService moderationService) {
+                        ModerationService moderationService,
+                        PointsService pointsService) {
         this.replyRepo = replyRepo;
         this.postRepo = postRepo;
         this.userRepo = userRepo;
@@ -59,6 +61,7 @@ public class ReplyService {
         this.muteService = muteService;
         this.sensitiveWordService = sensitiveWordService;
         this.moderationService = moderationService;
+        this.pointsService = pointsService;
     }
 
     @Transactional
@@ -175,6 +178,9 @@ public class ReplyService {
         } catch (Exception e) {
             log.warn("Failed to cache idempotency key: {}", e.getMessage());
         }
+
+        // 12. Award points (+2)
+        pointsService.addPoints(userId, 2, "create_reply", "reply", replyId);
 
         return ReplyResponseMapper.from(reply, user, false);
     }
@@ -293,6 +299,13 @@ public class ReplyService {
         reply.setDeleted(true);
         reply.setDeletedAt(Instant.now());
         replyRepo.save(reply);
+
+        // Deduct points: moderator delete vs self-delete
+        if (!userId.equals(reply.getAuthorId())) {
+            pointsService.deductPoints(reply.getAuthorId(), 10, "reply_deleted_mod", "reply", replyId);
+        } else {
+            pointsService.deductPoints(reply.getAuthorId(), 2, "post_deleted_self", "reply", replyId);
+        }
     }
 
     private void checkEditPermission(Reply reply, String userId, String role) {

@@ -63,6 +63,7 @@ public class PostService {
     private final MuteService muteService;
     private final SensitiveWordService sensitiveWordService;
     private final ModerationService moderationService;
+    private final PointsService pointsService;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
@@ -78,6 +79,7 @@ public class PostService {
                        MuteService muteService,
                        SensitiveWordService sensitiveWordService,
                        ModerationService moderationService,
+                       PointsService pointsService,
                        org.springframework.data.redis.core.StringRedisTemplate redis,
                        com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.postRepo = postRepo;
@@ -92,6 +94,7 @@ public class PostService {
         this.muteService = muteService;
         this.sensitiveWordService = sensitiveWordService;
         this.moderationService = moderationService;
+        this.pointsService = pointsService;
         this.redis = redis;
         this.objectMapper = objectMapper;
     }
@@ -193,8 +196,7 @@ public class PostService {
                 dto.title(), dto.boardId());
 
         // 11. Award points (+5)
-        user.setPoints(user.getPoints() + 5);
-        userRepo.save(user);
+        pointsService.addPoints(userId, 5, "create_post", "post", postId);
 
         // 12. Cache idempotency result
         try {
@@ -312,18 +314,10 @@ public class PostService {
 
         // If admin/moderator deletes someone else's post, deduct points (-10)
         if (!userId.equals(post.getAuthorId())) {
-            var author = userRepo.findById(post.getAuthorId()).orElse(null);
-            if (author != null) {
-                author.setPoints(Math.max(0, author.getPoints() - 10));
-                userRepo.save(author);
-            }
+            pointsService.deductPoints(post.getAuthorId(), 10, "post_deleted_mod", "post", postId);
         } else {
             // Self-delete: deduct the +5 posting reward
-            var author = userRepo.findById(post.getAuthorId()).orElse(null);
-            if (author != null) {
-                author.setPoints(Math.max(0, author.getPoints() - 5));
-                userRepo.save(author);
-            }
+            pointsService.deductPoints(post.getAuthorId(), 5, "post_deleted_self", "post", postId);
         }
     }
 
@@ -381,11 +375,7 @@ public class PostService {
 
         // First time essence: +20 points (one-time reward)
         if (!wasEssence) {
-            var author = userRepo.findById(post.getAuthorId()).orElse(null);
-            if (author != null) {
-                author.setPoints(author.getPoints() + 20);
-                userRepo.save(author);
-            }
+            pointsService.addPoints(post.getAuthorId(), 20, "post_featured", "post", postId);
 
             // Send post_essenced notification to post author
             notificationService.create(
@@ -456,6 +446,8 @@ public class PostService {
                     "post",
                     postId
             );
+            // Award points to post author (+2)
+            pointsService.addPoints(post.getAuthorId(), 2, "receive_bookmark", "post", postId);
         }
 
         return new CollectToggleResponse(true, post.getCollectCount());

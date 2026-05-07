@@ -26,13 +26,16 @@ public class MuteService {
     private final MuteRecordRepository muteRecordRepo;
     private final UserRepository userRepo;
     private final NotificationService notificationService;
+    private final PointsService pointsService;
 
     public MuteService(MuteRecordRepository muteRecordRepo,
                        UserRepository userRepo,
-                       NotificationService notificationService) {
+                       NotificationService notificationService,
+                       PointsService pointsService) {
         this.muteRecordRepo = muteRecordRepo;
         this.userRepo = userRepo;
         this.notificationService = notificationService;
+        this.pointsService = pointsService;
     }
 
     @Transactional
@@ -69,7 +72,10 @@ public class MuteService {
         record.setReason(reason);
         muteRecordRepo.save(record);
 
-        // 6. Send notification
+        // 6. Deduct points (-20)
+        pointsService.deductPoints(targetUserId, 20, "muted_penalty", null);
+
+        // 7. Send notification
         notificationService.create(
                 targetUserId,
                 "user_banned",

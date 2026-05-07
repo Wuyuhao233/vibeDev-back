@@ -42,6 +42,7 @@ class PostServiceTest {
     @Mock MuteService muteService;
     @Mock SensitiveWordService sensitiveWordService;
     @Mock ModerationService moderationService;
+    @Mock PointsService pointsService;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
@@ -54,7 +55,7 @@ class PostServiceTest {
         postService = new PostService(postRepo, postTagRepo, tagRepo, userRepo,
                 boardRepo, favoriteRepo, collectionFolderRepo, likeRepo,
                 notificationService, muteService, sensitiveWordService,
-                moderationService, redis, objectMapper);
+                moderationService, pointsService, redis, objectMapper);
         when(redis.opsForValue()).thenReturn(valueOps);
         when(muteService.isUserBanned(anyString())).thenReturn(false);
         when(sensitiveWordService.hasSensitiveWord(anyString())).thenReturn(false);
@@ -460,7 +461,7 @@ class PostServiceTest {
 
         assertTrue(post.isDeleted());
         assertEquals("u2", post.getDeletedBy());
-        assertEquals(90, author.getPoints()); // -10 penalty
+        verify(pointsService).deductPoints(eq("u1"), eq(10), eq("post_deleted_mod"), eq("post"), eq("p1"));
     }
 
     // ─── pin ──────────────────────────────────────────
@@ -551,7 +552,7 @@ class PostServiceTest {
         var result = postService.toggleEssence("p1", "u2", "admin");
 
         assertTrue(result.isEssence());
-        assertEquals(120, author.getPoints()); // +20 reward
+        verify(pointsService).addPoints(eq("u1"), eq(20), eq("post_featured"), eq("post"), eq("p1"));
         verify(postRepo).save(post);
     }
 

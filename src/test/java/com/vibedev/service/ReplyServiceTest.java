@@ -43,13 +43,14 @@ class ReplyServiceTest {
     @Mock MuteService muteService;
     @Mock SensitiveWordService sensitiveWordService;
     @Mock ModerationService moderationService;
+    @Mock PointsService pointsService;
 
     @InjectMocks ReplyService replyService;
 
     @BeforeEach
     void setUp() {
         replyService = new ReplyService(replyRepo, postRepo, userRepo, redis,
-                notificationService, muteService, sensitiveWordService, moderationService);
+                notificationService, muteService, sensitiveWordService, moderationService, pointsService);
         when(redis.opsForValue()).thenReturn(valueOps);
         when(muteService.isUserBanned(anyString())).thenReturn(false);
         when(sensitiveWordService.hasSensitiveWord(anyString())).thenReturn(false);

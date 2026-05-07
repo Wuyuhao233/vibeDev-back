@@ -27,15 +27,18 @@ public class LikeService {
     private final ReplyRepository replyRepo;
     private final UserRepository userRepo;
     private final NotificationService notificationService;
+    private final PointsService pointsService;
 
     public LikeService(LikeRepository likeRepo, PostRepository postRepo,
                        ReplyRepository replyRepo, UserRepository userRepo,
-                       NotificationService notificationService) {
+                       NotificationService notificationService,
+                       PointsService pointsService) {
         this.likeRepo = likeRepo;
         this.postRepo = postRepo;
         this.replyRepo = replyRepo;
         this.userRepo = userRepo;
         this.notificationService = notificationService;
+        this.pointsService = pointsService;
     }
 
     @Transactional
@@ -67,6 +70,8 @@ public class LikeService {
                     "post".equals(targetType) ? "post" : "reply",
                     targetId
             );
+            // Award points to content author (+1)
+            pointsService.addPoints(targetAuthorId, 1, "receive_like", targetType, targetId);
         }
 
         return new LikeToggleResponse(true, newCount);

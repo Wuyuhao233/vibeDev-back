@@ -34,12 +34,13 @@ class LikeServiceTest {
     @Mock ReplyRepository replyRepo;
     @Mock UserRepository userRepo;
     @Mock NotificationService notificationService;
+    @Mock PointsService pointsService;
 
     private LikeService likeService;
 
     @BeforeEach
     void setUp() {
-        likeService = new LikeService(likeRepo, postRepo, replyRepo, userRepo, notificationService);
+        likeService = new LikeService(likeRepo, postRepo, replyRepo, userRepo, notificationService, pointsService);
     }
 
     private Post createPost(String id, String authorId, int likeCount) {
