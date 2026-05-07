@@ -13,7 +13,8 @@ public record ReviewStatsResponse(
             long pendingCount,
             long appealCount,
             long todayApproved,
-            long todayRejected
+            long todayRejected,
+            long totalAudited
     ) {}
 
     public record ReportStats(
@@ -26,7 +27,8 @@ public record ReviewStatsResponse(
             double blockRate,
             double manualPassRate,
             double falsePositiveRate,
-            double missRate
+            double missRate,
+            double avgAiResponseTimeMs
     ) {}
 
     public record CostStats(

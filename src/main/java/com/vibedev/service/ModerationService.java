@@ -303,16 +303,22 @@ public class ModerationService {
         double falsePositiveRate = 0.0; // Requires appeal data (V1.2)
         double missRate = 0.0; // Requires historical data
 
+        // Total audited this month
+        long totalAuditedMonth = queueRepo.countApprovedSince(monthStart) + queueRepo.countRejectedSince(monthStart);
+
+        // Avg AI response time
+        double avgAiResponseTimeMs = aiAuditLogRepo.avgResponseTimeMsSince(monthStart);
+
         // Cost stats
         BigDecimal monthCost = aiAuditLogRepo.sumCostSince(monthStart);
         long dailyCalls = aiAuditLogRepo.countByCreatedAtAfter(todayStart);
         boolean budgetExceeded = isBudgetExceeded();
 
         return new ReviewStatsResponse(
-                new ReviewStatsResponse.QueueStats(pendingCount, 0, todayApproved, todayRejected),
+                new ReviewStatsResponse.QueueStats(pendingCount, 0, todayApproved, todayRejected, totalAuditedMonth),
                 new ReviewStatsResponse.ReportStats(reportPending, reportsResolvedToday),
                 new ReviewStatsResponse.QualityStats(passRate, blockRate, manualPassRate,
-                        falsePositiveRate, missRate),
+                        falsePositiveRate, missRate, avgAiResponseTimeMs),
                 new ReviewStatsResponse.CostStats(monthlyBudget != null ? monthlyBudget : MONTHLY_BUDGET_DEFAULT,
                         monthCost != null ? monthCost : BigDecimal.ZERO, dailyCalls, budgetExceeded)
         );

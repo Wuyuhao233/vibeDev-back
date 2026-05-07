@@ -261,6 +261,7 @@ class ModerationServiceTest {
         when(logRepo.countByActionSince(eq("manual_rejected"), any())).thenReturn(1L);
         when(aiAuditLogRepo.sumCostSince(any())).thenReturn(BigDecimal.valueOf(15.6));
         when(aiAuditLogRepo.countByCreatedAtAfter(any())).thenReturn(320L);
+        when(aiAuditLogRepo.avgResponseTimeMsSince(any())).thenReturn(450.0);
 
         var result = moderationService.getReviewStats("admin1", "admin");
 
