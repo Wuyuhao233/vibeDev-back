@@ -38,8 +38,11 @@ public class MailService {
     }
 
     @Async
-    public void sendNotificationEmail(String to, String subject, String body) {
-        send(to, subject, body);
+    public void sendNotificationEmailForEvent(String to, String username, String eventType,
+                                               String title, String body) {
+        String subject = "[vibeDev] " + title;
+        String template = buildNotificationTemplate(username, title, body, eventType);
+        send(to, subject, template);
     }
 
     private void send(String to, String subject, String content) {
@@ -55,6 +58,35 @@ public class MailService {
         } catch (Exception e) {
             log.error("Failed to send email to {}: {}", to, e.getMessage());
         }
+    }
+
+    private String buildNotificationTemplate(String username, String title, String body, String eventType) {
+        String icon = switch (eventType) {
+            case "post_replied", "reply_quoted" -> "💬";     // 💬
+            case "received_like" -> "❤️";                      // ❤️
+            case "post_collected" -> "⭐";                            // ⭐
+            case "post_essenced" -> "💎";                        // 💎
+            case "post_pinned" -> "📌";                          // 📌
+            case "user_banned" -> "🚫";                          // 🚫
+            default -> "🔔";                                     // 🔔
+        };
+
+        return """
+                <div style="max-width:600px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+                    <div style="background:#6366f1;padding:24px;border-radius:8px 8px 0 0;">
+                        <h1 style="color:#fff;margin:0;font-size:20px;">vibeDev 通知</h1>
+                    </div>
+                    <div style="background:#fff;padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
+                        <p style="margin:0 0 16px;color:#6b7280;">Hi %s，</p>
+                        <div style="background:#f3f4f6;padding:16px;border-radius:8px;margin-bottom:16px;">
+                            <p style="margin:0;font-size:16px;line-height:1.6;">%s %s</p>
+                        </div>
+                        <p style="color:#9ca3af;font-size:13px;margin:0;">
+                            此邮件由 vibeDev 自动发送。如需调整通知偏好，请前往设置页面。
+                        </p>
+                    </div>
+                </div>
+                """.formatted(username, icon, body);
     }
 
     private String buildVerifyEmailTemplate(String username, String verifyUrl) {
