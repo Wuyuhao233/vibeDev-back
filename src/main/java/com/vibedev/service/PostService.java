@@ -58,6 +58,8 @@ public class PostService {
     private final BoardRepository boardRepo;
     private final FavoriteRepository favoriteRepo;
     private final CollectionFolderRepository collectionFolderRepo;
+    private final LikeRepository likeRepo;
+    private final NotificationService notificationService;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
@@ -68,6 +70,8 @@ public class PostService {
                        TagRepository tagRepo, UserRepository userRepo,
                        BoardRepository boardRepo, FavoriteRepository favoriteRepo,
                        CollectionFolderRepository collectionFolderRepo,
+                       LikeRepository likeRepo,
+                       NotificationService notificationService,
                        org.springframework.data.redis.core.StringRedisTemplate redis,
                        com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.postRepo = postRepo;
@@ -77,6 +81,8 @@ public class PostService {
         this.boardRepo = boardRepo;
         this.favoriteRepo = favoriteRepo;
         this.collectionFolderRepo = collectionFolderRepo;
+        this.likeRepo = likeRepo;
+        this.notificationService = notificationService;
         this.redis = redis;
         this.objectMapper = objectMapper;
     }
@@ -354,6 +360,16 @@ public class PostService {
                 author.setPoints(author.getPoints() + 20);
                 userRepo.save(author);
             }
+
+            // Send post_essenced notification to post author
+            notificationService.create(
+                    post.getAuthorId(),
+                    "post_essenced",
+                    "帖子被加精",
+                    "你的帖子《" + post.getTitle() + "》被版主设为精华",
+                    "post",
+                    postId
+            );
         }
         // Un-essence does NOT deduct points
 
@@ -401,6 +417,20 @@ public class PostService {
 
         post.setCollectCount(post.getCollectCount() + 1);
         postRepo.save(post);
+
+        // Send post_collected notification to post author (if not self-collect)
+        if (!userId.equals(post.getAuthorId())) {
+            var collector = userRepo.findById(userId).orElse(null);
+            String collectorName = collector != null ? collector.getUsername() : "unknown";
+            notificationService.create(
+                    post.getAuthorId(),
+                    "post_collected",
+                    "帖子被收藏",
+                    collectorName + " 收藏了你的帖子《" + post.getTitle() + "》",
+                    "post",
+                    postId
+            );
+        }
 
         return new CollectToggleResponse(true, post.getCollectCount());
     }
@@ -645,7 +675,7 @@ public class PostService {
         boolean isLiked = false;
         if (currentUserId != null) {
             isCollected = favoriteRepo.findByUserIdAndPostId(currentUserId, p.getId()).isPresent();
-            // isLiked would check a LikeRepository - placeholder for now
+            isLiked = likeRepo.existsByUserIdAndTargetTypeAndTargetId(currentUserId, "post", p.getId());
         }
 
         return new PostDetailResponse(

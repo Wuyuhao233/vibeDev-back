@@ -39,12 +39,13 @@ class ReplyServiceTest {
     @Mock UserRepository userRepo;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
+    @Mock NotificationService notificationService;
 
     @InjectMocks ReplyService replyService;
 
     @BeforeEach
     void setUp() {
-        replyService = new ReplyService(replyRepo, postRepo, userRepo, redis);
+        replyService = new ReplyService(replyRepo, postRepo, userRepo, redis, notificationService);
         when(redis.opsForValue()).thenReturn(valueOps);
     }
 

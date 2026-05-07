@@ -40,13 +40,16 @@ public class ReplyService {
     private final PostRepository postRepo;
     private final UserRepository userRepo;
     private final StringRedisTemplate redis;
+    private final NotificationService notificationService;
 
     public ReplyService(ReplyRepository replyRepo, PostRepository postRepo,
-                        UserRepository userRepo, StringRedisTemplate redis) {
+                        UserRepository userRepo, StringRedisTemplate redis,
+                        NotificationService notificationService) {
         this.replyRepo = replyRepo;
         this.postRepo = postRepo;
         this.userRepo = userRepo;
         this.redis = redis;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -130,6 +133,20 @@ public class ReplyService {
         // 9. Increment post reply_count
         post.setReplyCount(post.getReplyCount() + 1);
         postRepo.save(post);
+
+        // 9b. Send post_replied notification to post author (if not self-reply)
+        if (!userId.equals(post.getAuthorId())) {
+            String replierName = user.getUsername();
+            String postTitle = post.getTitle();
+            notificationService.create(
+                    post.getAuthorId(),
+                    "post_replied",
+                    "帖子被回复",
+                    replierName + " 回复了你的帖子《" + postTitle + "》",
+                    "post",
+                    postId
+            );
+        }
 
         // 10. Set cooldown
         redis.opsForValue().set(cooldownKey, "1", COOLDOWN_SECONDS, TimeUnit.SECONDS);
