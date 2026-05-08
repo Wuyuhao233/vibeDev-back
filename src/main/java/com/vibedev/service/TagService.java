@@ -9,7 +9,12 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
+
+import com.vibedev.dto.board.TagItem;
+import com.vibedev.entity.Tag;
 
 @Service
 public class TagService {
@@ -46,6 +51,21 @@ public class TagService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "未关注该标签"));
         userFollowedTagRepo.delete(uft);
         clearUserProfileCache(userId);
+    }
+
+    public List<TagItem> getAllTags() {
+        return tagRepo.findAll().stream()
+                .map(tag -> new TagItem(tag.getId(), tag.getName(), tag.getBoardId(), tag.getSortOrder(), tag.getPostCount()))
+                .collect(Collectors.toList());
+    }
+
+    public List<TagItem> getFollowedTags(String userId) {
+        return userFollowedTagRepo.findByUserId(userId).stream()
+                .map(uft -> tagRepo.findById(uft.getTagId())
+                        .map(tag -> new TagItem(tag.getId(), tag.getName(), tag.getBoardId(), tag.getSortOrder(), tag.getPostCount()))
+                        .orElse(null))
+                .filter(tag -> tag != null)
+                .collect(Collectors.toList());
     }
 
     private void clearUserProfileCache(String userId) {
