@@ -3,6 +3,7 @@ package com.vibedev.service;
 import com.vibedev.common.BusinessException;
 import com.vibedev.dto.search.SearchResponse;
 import com.vibedev.dto.search.SearchResultItem;
+import com.vibedev.dto.search.SearchSuggestResponse;
 import com.vibedev.dto.search.SearchSuggestionResponse;
 import com.vibedev.dto.user.UserSummary;
 import com.vibedev.entity.SearchLog;
@@ -21,6 +22,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.ZSetOperations;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
@@ -40,6 +42,7 @@ class SearchServiceTest {
     @Mock SearchEngine searchEngine;
     @Mock SearchLogRepository searchLogRepo;
     @Mock StringRedisTemplate redis;
+    @Mock JdbcTemplate jdbc;
     @Mock ValueOperations<String, String> valueOps;
     @Mock ZSetOperations<String, String> zSetOps;
 
@@ -47,7 +50,7 @@ class SearchServiceTest {
 
     @BeforeEach
     void setUp() {
-        searchService = new SearchService(searchEngine, searchLogRepo, redis);
+        searchService = new SearchService(searchEngine, searchLogRepo, redis, jdbc);
         ReflectionTestUtils.setField(searchService, "rateLimitInterval", 3);
         when(redis.opsForValue()).thenReturn(valueOps);
         when(redis.opsForZSet()).thenReturn(zSetOps);
@@ -210,6 +213,61 @@ class SearchServiceTest {
     void shouldDefaultPageTo1() {
         SearchQuery query = new SearchQuery("test", SearchScope.ALL, null, 0, 20);
         assertEquals(1, query.page());
+    }
+
+    // --- getSuggest tests ---
+
+    @Test
+    void shouldReturnSuggestionsForPrefix() {
+        when(jdbc.queryForList(
+                contains("SELECT title"),
+                eq(String.class),
+                eq("React%"))
+        ).thenReturn(List.of("React 18 新特性解析", "React Hooks 指南"));
+
+        SearchSuggestResponse result = searchService.getSuggest("React");
+
+        assertEquals(2, result.suggestions().size());
+        assertTrue(result.suggestions().contains("React 18 新特性解析"));
+        assertTrue(result.suggestions().contains("React Hooks 指南"));
+    }
+
+    @Test
+    void shouldReturnEmptyForBlankPrefix() {
+        SearchSuggestResponse result = searchService.getSuggest("  ");
+        assertTrue(result.suggestions().isEmpty());
+    }
+
+    @Test
+    void shouldReturnEmptyForOverlyLongPrefix() {
+        String longPrefix = "a".repeat(51);
+        SearchSuggestResponse result = searchService.getSuggest(longPrefix);
+        assertTrue(result.suggestions().isEmpty());
+    }
+
+    @Test
+    void shouldReturnEmptyWhenNoMatches() {
+        when(jdbc.queryForList(
+                contains("SELECT title"),
+                eq(String.class),
+                eq("XYZ%"))
+        ).thenReturn(List.of());
+
+        SearchSuggestResponse result = searchService.getSuggest("XYZ");
+        assertTrue(result.suggestions().isEmpty());
+    }
+
+    @Test
+    void shouldEscapeSpecialCharsInPrefix() {
+        when(jdbc.queryForList(
+                contains("SELECT title"),
+                eq(String.class),
+                eq("test%"))
+        ).thenReturn(List.of("test post"));
+
+        SearchSuggestResponse result = searchService.getSuggest("test");
+        assertEquals(1, result.suggestions().size());
+        verify(jdbc).queryForList(anyString(), eq(String.class), eq("test%"));
     }
 
     private SearchResultItem createTestItem(String id, String title) {

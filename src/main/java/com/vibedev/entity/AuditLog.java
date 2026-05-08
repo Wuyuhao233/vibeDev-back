@@ -8,10 +8,10 @@ import java.time.Instant;
 public class AuditLog {
 
     @Id
-    @Column(length = 36)
+    @Column(columnDefinition = "CHAR(36)")
     private String id;
 
-    @Column(name = "actor_id", length = 36, nullable = false)
+    @Column(name = "actor_id", columnDefinition = "CHAR(36)", nullable = false)
     private String actorId;
 
     @Column(name = "actor_username", length = 20, nullable = false)
@@ -23,7 +23,7 @@ public class AuditLog {
     @Column(name = "target_type", length = 20, nullable = false)
     private String targetType;
 
-    @Column(name = "target_id", length = 36)
+    @Column(name = "target_id", columnDefinition = "CHAR(36)")
     private String targetId;
 
     @Column(columnDefinition = "TEXT")

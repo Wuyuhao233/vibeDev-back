@@ -2,6 +2,7 @@ package com.vibedev.controller;
 
 import com.vibedev.common.ApiResponse;
 import com.vibedev.dto.search.SearchResponse;
+import com.vibedev.dto.search.SearchSuggestResponse;
 import com.vibedev.dto.search.SearchSuggestionResponse;
 import com.vibedev.search.SearchQuery;
 import com.vibedev.search.SearchScope;
@@ -42,6 +43,11 @@ public class SearchController {
     @GetMapping("/suggestions")
     public ApiResponse<SearchSuggestionResponse> suggestions() {
         return ApiResponse.ok(searchService.getSuggestions());
+    }
+
+    @GetMapping("/suggest")
+    public ApiResponse<SearchSuggestResponse> suggest(@RequestParam String q) {
+        return ApiResponse.ok(searchService.getSuggest(q));
     }
 
     private String getClientIp(HttpServletRequest request) {

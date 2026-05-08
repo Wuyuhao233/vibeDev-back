@@ -3,6 +3,7 @@ package com.vibedev.service;
 import com.vibedev.common.BusinessException;
 import com.vibedev.common.ErrorCode;
 import com.vibedev.dto.search.SearchResponse;
+import com.vibedev.dto.search.SearchSuggestResponse;
 import com.vibedev.dto.search.SearchSuggestionResponse;
 import com.vibedev.entity.SearchLog;
 import com.vibedev.repository.SearchLogRepository;
@@ -13,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -31,15 +33,17 @@ public class SearchService {
     private final SearchEngine searchEngine;
     private final SearchLogRepository searchLogRepo;
     private final StringRedisTemplate redis;
+    private final JdbcTemplate jdbc;
 
     @Value("${search.rateLimit.intervalSeconds:3}")
     private int rateLimitInterval;
 
     public SearchService(SearchEngine searchEngine, SearchLogRepository searchLogRepo,
-                         StringRedisTemplate redis) {
+                         StringRedisTemplate redis, JdbcTemplate jdbc) {
         this.searchEngine = searchEngine;
         this.searchLogRepo = searchLogRepo;
         this.redis = redis;
+        this.jdbc = jdbc;
     }
 
     public SearchResponse search(SearchQuery query, String ipAddress, String userId) {
@@ -66,6 +70,22 @@ public class SearchService {
         Set<String> hot = redis.opsForZSet().reverseRange(key, 0, 9);
         List<String> hotSearches = hot != null ? new ArrayList<>(hot) : List.of();
         return new SearchSuggestionResponse(hotSearches);
+    }
+
+    public SearchSuggestResponse getSuggest(String prefix) {
+        String trimmed = prefix.trim();
+        if (trimmed.isEmpty()) {
+            return new SearchSuggestResponse(List.of());
+        }
+        if (trimmed.length() > MAX_KEYWORD_LENGTH) {
+            return new SearchSuggestResponse(List.of());
+        }
+        List<String> titles = jdbc.queryForList(
+                "SELECT title FROM posts " +
+                "WHERE title LIKE ? AND is_deleted = FALSE AND audit_status = 'approved' " +
+                "GROUP BY title ORDER BY MAX(created_at) DESC LIMIT 10",
+                String.class, trimmed + "%");
+        return new SearchSuggestResponse(titles);
     }
 
     private void validateKeyword(String keyword) {
