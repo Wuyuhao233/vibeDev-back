@@ -6,7 +6,7 @@ spring:
     name: vibedev-backend
 
   datasource:
-    url: jdbc:mysql://localhost:3306/vibedev?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&createDatabaseIfNotExist=true
+    url: jdbc:mysql://localhost:3306/vibedev?characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=UTC&createDatabaseIfNotExist=true
     username: root
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -91,6 +91,15 @@ cas:
   login_url: ${CAS_LOGIN_URL:https://cas.example.com/login}
   service_validate_url: ${CAS_SERVICE_VALIDATE_URL:https://cas.example.com/serviceValidate}
   service: ${CAS_SERVICE:https://forum.example.com/api/v1/auth/cas-login}
+
+search:
+  engine: fts
+  highlight:
+    preTag: "<mark>"
+    postTag: "</mark>"
+    excerptLength: 150
+  rateLimit:
+    intervalSeconds: 3
 
 logging:
   level:

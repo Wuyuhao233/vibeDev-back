@@ -34,6 +34,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/boards/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/posts/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/replies/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/search/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/users/leaderboard").permitAll()
                 .requestMatchers("/api/v1/health").permitAll()
                 .requestMatchers("/actuator/health").permitAll()

@@ -19,6 +19,9 @@ spring:
     host: localhost
     port: 3025
 
+search:
+  engine: like
+
 app:
   jwt:
     secret: test-secret-key-that-is-long-enough-for-hmac-sha256-minimum-256-bits
