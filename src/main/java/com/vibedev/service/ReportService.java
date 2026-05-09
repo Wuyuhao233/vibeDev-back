@@ -464,6 +464,9 @@ public class ReportService {
     }
 
     private void validateTarget(String targetType, String targetId) {
+        if (targetType == null) {
+            throw new BusinessException(ErrorCode.DUPLICATE_SUBMIT, "无效的举报类型");
+        }
         switch (targetType) {
             case "post":
                 postRepo.findById(targetId)
