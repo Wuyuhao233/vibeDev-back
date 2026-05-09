@@ -7,6 +7,7 @@ import com.vibedev.entity.Board;
 import com.vibedev.entity.Tag;
 import com.vibedev.repository.BoardRepository;
 import com.vibedev.repository.PostRepository;
+import com.vibedev.repository.PostTagRepository;
 import com.vibedev.repository.TagRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,13 +27,16 @@ public class BoardManageService {
     private final BoardRepository boardRepo;
     private final TagRepository tagRepo;
     private final PostRepository postRepo;
+    private final PostTagRepository postTagRepo;
     private final StringRedisTemplate redis;
 
     public BoardManageService(BoardRepository boardRepo, TagRepository tagRepo,
-                               PostRepository postRepo, StringRedisTemplate redis) {
+                               PostRepository postRepo, PostTagRepository postTagRepo,
+                               StringRedisTemplate redis) {
         this.boardRepo = boardRepo;
         this.tagRepo = tagRepo;
         this.postRepo = postRepo;
+        this.postTagRepo = postTagRepo;
         this.redis = redis;
     }
 
@@ -186,6 +190,17 @@ public class BoardManageService {
         if (dto.sortOrder() != null) tag.setSortOrder(dto.sortOrder());
 
         tagRepo.save(tag);
+    }
+
+    @Transactional
+    public void deleteTag(String tagId) {
+        var tag = tagRepo.findById(tagId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "标签不存在"));
+        // Remove tag associations from all posts
+        var postTags = postTagRepo.findByTagIdIn(List.of(tagId));
+        postTagRepo.deleteAll(postTags);
+        tagRepo.delete(tag);
+        clearBoardCache();
     }
 
     // ── Helpers ─────────────────────────────────────

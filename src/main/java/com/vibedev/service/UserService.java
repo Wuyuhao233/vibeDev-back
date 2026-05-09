@@ -95,7 +95,8 @@ public class UserService {
         return new UserProfile(
                 user.getId(), user.getUsername(), email,
                 user.getNickname(), user.getSignature(), user.getAvatarUrl(),
-                user.getRole(), user.getLevel(), user.getPoints(),
+                user.getRole(), user.getLevel(), PointsService.getLevelTitle(user.getLevel()),
+                user.getPoints(),
                 user.isActivated(), user.isBanned(), user.getBannedUntil(),
                 user.getCreatedAt(), user.getLastLoginAt());
     }

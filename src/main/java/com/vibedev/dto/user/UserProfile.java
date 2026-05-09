@@ -11,6 +11,7 @@ public record UserProfile(
         String avatarUrl,
         String role,
         int level,
+        String levelTitle,
         int points,
         boolean isActivated,
         boolean isBanned,

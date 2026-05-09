@@ -64,4 +64,10 @@ public class AdminBoardController {
         boardManageService.updateTag(id, dto);
         return ApiResponse.ok();
     }
+
+    @DeleteMapping("/tags/{id}")
+    public ApiResponse<Void> deleteTag(@PathVariable String id) {
+        boardManageService.deleteTag(id);
+        return ApiResponse.ok();
+    }
 }
