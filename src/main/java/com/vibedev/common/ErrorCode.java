@@ -15,6 +15,7 @@ public enum ErrorCode {
     PASSWORD_WRONG(10005),
     USERNAME_TAKEN(10006),
     EMAIL_TAKEN(10007),
+    INVALID_VERIFY_CODE(10008),
 
     // Permission (20xxx)
     FORBIDDEN(20001),

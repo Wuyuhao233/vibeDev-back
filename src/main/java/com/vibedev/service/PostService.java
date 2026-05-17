@@ -54,6 +54,7 @@ public class PostService {
     private final PostRepository postRepo;
     private final PostTagRepository postTagRepo;
     private final TagRepository tagRepo;
+    private final TagService tagService;
     private final UserRepository userRepo;
     private final BoardRepository boardRepo;
     private final FavoriteRepository favoriteRepo;
@@ -71,7 +72,8 @@ public class PostService {
     private String uploadPath;
 
     public PostService(PostRepository postRepo, PostTagRepository postTagRepo,
-                       TagRepository tagRepo, UserRepository userRepo,
+                       TagRepository tagRepo, TagService tagService,
+                       UserRepository userRepo,
                        BoardRepository boardRepo, FavoriteRepository favoriteRepo,
                        CollectionFolderRepository collectionFolderRepo,
                        LikeRepository likeRepo,
@@ -85,6 +87,7 @@ public class PostService {
         this.postRepo = postRepo;
         this.postTagRepo = postTagRepo;
         this.tagRepo = tagRepo;
+        this.tagService = tagService;
         this.userRepo = userRepo;
         this.boardRepo = boardRepo;
         this.favoriteRepo = favoriteRepo;
@@ -112,8 +115,8 @@ public class PostService {
         if (dto.title().length() < 5 || dto.title().length() > 100) {
             throw new BusinessException(ErrorCode.VALIDATION_TITLE, "标题需5-100个字符");
         }
-        if (dto.tagIds() == null || dto.tagIds().isEmpty() || dto.tagIds().size() > 3) {
-            throw new BusinessException(ErrorCode.VALIDATION_TAGS, "请选择1-3个子标签");
+        if (dto.tagNames() != null && dto.tagNames().size() > 3) {
+            throw new BusinessException(ErrorCode.VALIDATION_TAGS, "标签最多3个");
         }
         if (dto.content() == null || dto.content().isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_CONTENT_EMPTY, "请输入内容");
@@ -182,13 +185,16 @@ public class PostService {
         post.setHasCodeBlock(dto.content().contains("```"));
         postRepo.save(post);
 
-        // 10. Create post_tags
-        for (String tagId : dto.tagIds()) {
-            var pt = new PostTag();
-            pt.setId(UUID.randomUUID().toString());
-            pt.setPostId(postId);
-            pt.setTagId(tagId);
-            postTagRepo.save(pt);
+        // 10. Create post_tags (auto-create tags from names)
+        if (dto.tagNames() != null && !dto.tagNames().isEmpty()) {
+            for (String tagName : dto.tagNames()) {
+                Tag tag = tagService.findOrCreateTag(dto.boardId(), tagName);
+                var pt = new PostTag();
+                pt.setId(UUID.randomUUID().toString());
+                pt.setPostId(postId);
+                pt.setTagId(tag.getId());
+                postTagRepo.save(pt);
+            }
         }
 
         // 10b. Trigger async AI review
@@ -271,18 +277,19 @@ public class PostService {
         if (dto.coverImageUrl() != null || (dto.title() != null && dto.coverImageUrl() == null)) {
             post.setCoverImageUrl(dto.coverImageUrl());
         }
-        if (dto.tagIds() != null && !dto.tagIds().isEmpty()) {
-            if (dto.tagIds().size() > 3) {
-                throw new BusinessException(ErrorCode.VALIDATION_TAGS, "请选择1-3个子标签");
+        if (dto.tagNames() != null && !dto.tagNames().isEmpty()) {
+            if (dto.tagNames().size() > 3) {
+                throw new BusinessException(ErrorCode.VALIDATION_TAGS, "标签最多3个");
             }
-            // Replace tags
+            // Replace tags (auto-create tags from names)
             var existing = postTagRepo.findByPostId(postId);
             postTagRepo.deleteAll(existing);
-            for (String tagId : dto.tagIds()) {
+            for (String tagName : dto.tagNames()) {
+                Tag tag = tagService.findOrCreateTag(post.getBoardId(), tagName);
                 var pt = new PostTag();
                 pt.setId(UUID.randomUUID().toString());
                 pt.setPostId(postId);
-                pt.setTagId(tagId);
+                pt.setTagId(tag.getId());
                 postTagRepo.save(pt);
             }
         }

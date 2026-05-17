@@ -53,32 +53,51 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(userRepo, loginHistoryRepo, notifySettingRepo,
-                jwtUtil, passwordEncoder, mailService, casService, redis, frontendUrl);
+                jwtUtil, passwordEncoder, mailService, casService, redis, frontendUrl,
+                300, 60, 5);
         when(redis.opsForValue()).thenReturn(valueOps);
     }
 
     // ─── Register ──────────────────────────────────────────
 
     @Test
-    void register_shouldCreateUserAndSendEmail() {
-        var req = new RegisterRequest("newuser", "new@test.com", "Pass1234");
+    void register_shouldCreateActivatedUserWhenCodeValid() {
+        var req = new RegisterRequest("new@test.com", "123456", "newuser", "Pass1234");
+        when(valueOps.get("register:code:new@test.com")).thenReturn("123456");
         when(userRepo.existsByUsernameAndIsActivatedTrueAndIsDeactivatedFalse("newuser")).thenReturn(false);
         when(userRepo.existsByEmailAndIsActivatedTrueAndIsDeactivatedFalse("new@test.com")).thenReturn(false);
-        when(valueOps.increment("email:limit:new@test.com:24h")).thenReturn(1L);
         when(passwordEncoder.encode("Pass1234")).thenReturn("hashed");
-        when(jwtUtil.generateVerifyEmailToken(any(), eq("new@test.com"))).thenReturn("verify-token");
 
         assertDoesNotThrow(() -> authService.register(req, "127.0.0.1"));
 
-        verify(userRepo).save(argThat(u -> u.getUsername().equals("newuser") && !u.isActivated()));
-        verify(mailService).sendVerifyEmail(eq("new@test.com"), eq("newuser"), contains("verify-token"));
+        verify(redis).delete("register:code:new@test.com");
+        verify(userRepo).save(argThat(u -> u.getUsername().equals("newuser") && u.isActivated()));
         // verify 7 notification settings initialized
         verify(notifySettingRepo, times(7)).save(any(UserNotificationSetting.class));
     }
 
     @Test
+    void register_shouldRejectInvalidCode() {
+        var req = new RegisterRequest("new@test.com", "wrong", "newuser", "Pass1234");
+        when(valueOps.get("register:code:new@test.com")).thenReturn("123456");
+
+        var ex = assertThrows(BusinessException.class, () -> authService.register(req, "127.0.0.1"));
+        assertEquals(ErrorCode.INVALID_VERIFY_CODE.getCode(), ex.getCode());
+    }
+
+    @Test
+    void register_shouldRejectExpiredCode() {
+        var req = new RegisterRequest("new@test.com", "123456", "newuser", "Pass1234");
+        when(valueOps.get("register:code:new@test.com")).thenReturn(null);
+
+        var ex = assertThrows(BusinessException.class, () -> authService.register(req, "127.0.0.1"));
+        assertEquals(ErrorCode.INVALID_VERIFY_CODE.getCode(), ex.getCode());
+    }
+
+    @Test
     void register_shouldRejectDuplicateUsername() {
-        var req = new RegisterRequest("taken", "new@test.com", "Pass1234");
+        var req = new RegisterRequest("new@test.com", "123456", "taken", "Pass1234");
+        when(valueOps.get("register:code:new@test.com")).thenReturn("123456");
         when(userRepo.existsByUsernameAndIsActivatedTrueAndIsDeactivatedFalse("taken")).thenReturn(true);
 
         var ex = assertThrows(BusinessException.class, () -> authService.register(req, "127.0.0.1"));
@@ -87,7 +106,8 @@ class AuthServiceTest {
 
     @Test
     void register_shouldRejectDuplicateEmail() {
-        var req = new RegisterRequest("newuser", "taken@test.com", "Pass1234");
+        var req = new RegisterRequest("taken@test.com", "123456", "newuser", "Pass1234");
+        when(valueOps.get("register:code:taken@test.com")).thenReturn("123456");
         when(userRepo.existsByUsernameAndIsActivatedTrueAndIsDeactivatedFalse("newuser")).thenReturn(false);
         when(userRepo.existsByEmailAndIsActivatedTrueAndIsDeactivatedFalse("taken@test.com")).thenReturn(true);
 
@@ -96,13 +116,20 @@ class AuthServiceTest {
     }
 
     @Test
-    void register_shouldRateLimitEmail() {
-        var req = new RegisterRequest("newuser", "spam@test.com", "Pass1234");
-        when(userRepo.existsByUsernameAndIsActivatedTrueAndIsDeactivatedFalse("newuser")).thenReturn(false);
+    void sendRegisterCode_shouldRateLimitDaily() {
         when(userRepo.existsByEmailAndIsActivatedTrueAndIsDeactivatedFalse("spam@test.com")).thenReturn(false);
-        when(valueOps.increment("email:limit:spam@test.com:24h")).thenReturn(4L);
+        when(valueOps.increment("register:code:daily:spam@test.com")).thenReturn(6L);
 
-        var ex = assertThrows(BusinessException.class, () -> authService.register(req, "127.0.0.1"));
+        var ex = assertThrows(BusinessException.class, () -> authService.sendRegisterCode("spam@test.com"));
+        assertEquals(ErrorCode.RATE_LIMITED.getCode(), ex.getCode());
+    }
+
+    @Test
+    void sendRegisterCode_shouldRateLimitInterval() {
+        when(userRepo.existsByEmailAndIsActivatedTrueAndIsDeactivatedFalse("fast@test.com")).thenReturn(false);
+        when(redis.hasKey("register:code:interval:fast@test.com")).thenReturn(true);
+
+        var ex = assertThrows(BusinessException.class, () -> authService.sendRegisterCode("fast@test.com"));
         assertEquals(ErrorCode.RATE_LIMITED.getCode(), ex.getCode());
     }
 

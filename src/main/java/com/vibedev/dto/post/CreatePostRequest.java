@@ -6,7 +6,7 @@ import java.util.List;
 
 public record CreatePostRequest(
         @NotBlank String boardId,
-        @Size(min = 1, max = 3) List<String> tagIds,
+        @Size(max = 3) List<String> tagNames,
         @NotBlank @Size(min = 5, max = 100) String title,
         @NotBlank String content,
         String coverImageUrl,

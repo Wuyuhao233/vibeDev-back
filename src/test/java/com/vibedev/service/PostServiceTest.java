@@ -33,6 +33,7 @@ class PostServiceTest {
     @Mock PostRepository postRepo;
     @Mock PostTagRepository postTagRepo;
     @Mock TagRepository tagRepo;
+    @Mock TagService tagService;
     @Mock UserRepository userRepo;
     @Mock BoardRepository boardRepo;
     @Mock FavoriteRepository favoriteRepo;
@@ -52,7 +53,7 @@ class PostServiceTest {
 
     @BeforeEach
     void setUp() {
-        postService = new PostService(postRepo, postTagRepo, tagRepo, userRepo,
+        postService = new PostService(postRepo, postTagRepo, tagRepo, tagService, userRepo,
                 boardRepo, favoriteRepo, collectionFolderRepo, likeRepo,
                 notificationService, muteService, sensitiveWordService,
                 moderationService, pointsService, redis, objectMapper);
@@ -88,14 +89,20 @@ class PostServiceTest {
     void create_shouldSucceed() {
         var user = createUser("u1", "user", 2);
         var board = createBoard("b1", "Frontend");
-        var dto = new CreatePostRequest("b1", List.of("t1", "t2"), "Hello World Post",
+        var dto = new CreatePostRequest("b1", List.of("React", "Vue"), "Hello World Post",
                 "This is content", null, "idem-key-1");
 
         when(userRepo.findById("u1")).thenReturn(Optional.of(user));
         when(boardRepo.findByIdAndIsDeletedFalse("b1")).thenReturn(Optional.of(board));
         when(postRepo.countByTitleAndBoardIdAndIsDeletedFalse("Hello World Post", "b1")).thenReturn(0);
+        when(redis.opsForValue()).thenReturn(valueOps);
         when(redis.opsForValue().increment(contains("rate"))).thenReturn(1L);
         when(redis.opsForValue().increment(contains("daily"))).thenReturn(1L);
+        // Mock tagService.findOrCreateTag to return tags
+        var tag1 = new Tag(); tag1.setId("tag-react"); tag1.setName("React"); tag1.setBoardId("b1");
+        var tag2 = new Tag(); tag2.setId("tag-vue"); tag2.setName("Vue"); tag2.setBoardId("b1");
+        when(tagService.findOrCreateTag("b1", "React")).thenReturn(tag1);
+        when(tagService.findOrCreateTag("b1", "Vue")).thenReturn(tag2);
 
         var result = postService.create(dto, "u1");
 
@@ -117,14 +124,21 @@ class PostServiceTest {
     }
 
     @Test
-    void create_shouldFailWhenNoTags() {
+    void create_shouldSucceedWithNoTags() {
         var user = createUser("u1", "user", 2);
+        var board = createBoard("b1", "Frontend");
         var dto = new CreatePostRequest("b1", List.of(), "Hello World Post", "content", null, "idem-key");
 
         when(userRepo.findById("u1")).thenReturn(Optional.of(user));
+        when(boardRepo.findByIdAndIsDeletedFalse("b1")).thenReturn(Optional.of(board));
+        when(postRepo.countByTitleAndBoardIdAndIsDeletedFalse("Hello World Post", "b1")).thenReturn(0);
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(redis.opsForValue().increment(contains("rate"))).thenReturn(1L);
+        when(redis.opsForValue().increment(contains("daily"))).thenReturn(1L);
 
-        var ex = assertThrows(BusinessException.class, () -> postService.create(dto, "u1"));
-        assertEquals(ErrorCode.VALIDATION_TAGS.getCode(), ex.getCode());
+        var result = postService.create(dto, "u1");
+        assertNotNull(result);
+        verify(postTagRepo, never()).save(any(PostTag.class));
     }
 
     @Test

@@ -25,6 +25,12 @@ public class AuthController {
         return ApiResponse.ok(Map.of("available", available));
     }
 
+    @PostMapping("/send-register-code")
+    public ApiResponse<Void> sendRegisterCode(@Valid @RequestBody SendRegisterCodeRequest req) {
+        authService.sendRegisterCode(req.email());
+        return ApiResponse.ok();
+    }
+
     @PostMapping("/register")
     public ApiResponse<Void> register(@Valid @RequestBody RegisterRequest req,
                                        HttpServletRequest request) {

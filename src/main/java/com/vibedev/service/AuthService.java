@@ -42,13 +42,19 @@ public class AuthService {
     private final StringRedisTemplate redis;
 
     private final String frontendUrl;
+    private final int verifyCodeTtl;
+    private final int verifyCodeInterval;
+    private final int verifyCodeDailyLimit;
 
     public AuthService(UserRepository userRepo, LoginHistoryRepository loginHistoryRepo,
                        UserNotificationSettingRepository notifySettingRepo,
                        JwtUtil jwtUtil, PasswordEncoder passwordEncoder,
                        MailService mailService, CasService casService,
                        StringRedisTemplate redis,
-                       @Value("${app.frontend-url:http://localhost:3000}") String frontendUrl) {
+                       @Value("${app.frontend-url:http://localhost:3000}") String frontendUrl,
+                       @Value("${app.verify-code.ttl:300}") int verifyCodeTtl,
+                       @Value("${app.verify-code.interval-seconds:60}") int verifyCodeInterval,
+                       @Value("${app.verify-code.daily-limit:5}") int verifyCodeDailyLimit) {
         this.userRepo = userRepo;
         this.loginHistoryRepo = loginHistoryRepo;
         this.notifySettingRepo = notifySettingRepo;
@@ -58,6 +64,9 @@ public class AuthService {
         this.casService = casService;
         this.redis = redis;
         this.frontendUrl = frontendUrl;
+        this.verifyCodeTtl = verifyCodeTtl;
+        this.verifyCodeInterval = verifyCodeInterval;
+        this.verifyCodeDailyLimit = verifyCodeDailyLimit;
     }
 
     // ─── Check Username Availability ──────────────────────
@@ -68,10 +77,59 @@ public class AuthService {
         return !userRepo.existsByUsernameAndIsActivatedTrueAndIsDeactivatedFalse(username);
     }
 
+    // ─── Send Register Code ──────────────────────────────
+
+    public void sendRegisterCode(String email) {
+        // check email taken by activated user
+        if (userRepo.existsByEmailAndIsActivatedTrueAndIsDeactivatedFalse(email)) {
+            throw new BusinessException(ErrorCode.EMAIL_TAKEN, "该邮箱已被注册");
+        }
+
+        // rate limit: interval check (60s)
+        String intervalKey = "register:code:interval:" + email;
+        if (Boolean.TRUE.equals(redis.hasKey(intervalKey))) {
+            throw new BusinessException(ErrorCode.RATE_LIMITED, "发送过于频繁，请" + verifyCodeInterval + "秒后再试");
+        }
+
+        // rate limit: daily limit
+        String dailyKey = "register:code:daily:" + email;
+        Long dailyCount = redis.opsForValue().increment(dailyKey);
+        if (dailyCount != null && dailyCount == 1) {
+            redis.expire(dailyKey, 24, TimeUnit.HOURS);
+        }
+        if (dailyCount != null && dailyCount > verifyCodeDailyLimit) {
+            throw new BusinessException(ErrorCode.RATE_LIMITED, "发送次数已达上限，请24小时后再试");
+        }
+
+        // generate 6-digit code
+        String code = String.format("%06d", (int) (Math.random() * 1000000));
+
+        // store in Redis with TTL
+        String codeKey = "register:code:" + email;
+        redis.opsForValue().set(codeKey, code, verifyCodeTtl, TimeUnit.SECONDS);
+
+        // set interval key
+        redis.opsForValue().set(intervalKey, "1", verifyCodeInterval, TimeUnit.SECONDS);
+
+        // send email
+        mailService.sendVerifyCodeEmail(email, code);
+
+        log.info("Register code sent to: {}", email);
+    }
+
     // ─── Register ─────────────────────────────────────────
 
     @Transactional
     public void register(RegisterRequest req, String clientIp) {
+        // verify code
+        String codeKey = "register:code:" + req.email();
+        String storedCode = redis.opsForValue().get(codeKey);
+        if (storedCode == null || !storedCode.equals(req.code())) {
+            throw new BusinessException(ErrorCode.INVALID_VERIFY_CODE, "验证码错误或已过期");
+        }
+        // delete code after successful verification
+        redis.delete(codeKey);
+
         // check username taken
         if (userRepo.existsByUsernameAndIsActivatedTrueAndIsDeactivatedFalse(req.username())) {
             throw new BusinessException(ErrorCode.USERNAME_TAKEN, "用户名已被占用");
@@ -79,16 +137,6 @@ public class AuthService {
         // check email taken
         if (userRepo.existsByEmailAndIsActivatedTrueAndIsDeactivatedFalse(req.email())) {
             throw new BusinessException(ErrorCode.EMAIL_TAKEN, "该邮箱已被注册");
-        }
-
-        // rate limit: 24h max 3 emails
-        String rateKey = "email:limit:" + req.email() + ":24h";
-        Long count = redis.opsForValue().increment(rateKey);
-        if (count != null && count == 1) {
-            redis.expire(rateKey, 24, TimeUnit.HOURS);
-        }
-        if (count != null && count > 3) {
-            throw new BusinessException(ErrorCode.RATE_LIMITED, "发送过于频繁，请24小时后再试");
         }
 
         // remove unactivated old record with same email/username
@@ -99,7 +147,7 @@ public class AuthService {
             if (!u.isActivated()) userRepo.delete(u);
         });
 
-        // create user
+        // create user (activated immediately since email is verified)
         var user = new User();
         user.setId(UUID.randomUUID().toString());
         user.setUsername(req.username());
@@ -109,7 +157,7 @@ public class AuthService {
         user.setRole("user");
         user.setLevel(1);
         user.setPoints(0);
-        user.setActivated(false);
+        user.setActivated(true);
         user.setTokenVersion(0);
         userRepo.save(user);
 
@@ -122,11 +170,6 @@ public class AuthService {
                     UUID.randomUUID().toString(), user.getId(), et, "site");
             notifySettingRepo.save(setting);
         }
-
-        // send verify email
-        String token = jwtUtil.generateVerifyEmailToken(UUID.fromString(user.getId()), user.getEmail());
-        String verifyUrl = frontendUrl + "/verify-email?token=" + token;
-        mailService.sendVerifyEmail(user.getEmail(), user.getUsername(), verifyUrl);
 
         log.info("User registered: {} ({})", user.getUsername(), user.getId());
     }

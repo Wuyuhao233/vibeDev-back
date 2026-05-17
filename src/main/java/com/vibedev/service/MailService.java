@@ -38,6 +38,13 @@ public class MailService {
     }
 
     @Async
+    public void sendVerifyCodeEmail(String to, String code) {
+        String subject = "vibeDev 注册验证码";
+        String content = buildVerifyCodeTemplate(code);
+        send(to, subject, content);
+    }
+
+    @Async
     public void sendNotificationEmailForEvent(String to, String username, String eventType,
                                                String title, String body) {
         String subject = "[vibeDev] " + title;
@@ -116,5 +123,24 @@ public class MailService {
                     <p style="color:#999;">链接：%s</p>
                 </div>
                 """.formatted(username, resetUrl, resetUrl);
+    }
+
+    private String buildVerifyCodeTemplate(String code) {
+        return """
+                <div style="max-width:600px;margin:0 auto;font-family:sans-serif;">
+                    <div style="background:#6366f1;padding:24px;border-radius:8px 8px 0 0;">
+                        <h1 style="color:#fff;margin:0;font-size:20px;">vibeDev 注册验证码</h1>
+                    </div>
+                    <div style="background:#fff;padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
+                        <p style="margin:0 0 16px;color:#6b7280;">您正在注册 vibeDev 账号，验证码为：</p>
+                        <div style="background:#f3f4f6;padding:16px;border-radius:8px;text-align:center;margin-bottom:16px;">
+                            <span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#6366f1;">%s</span>
+                        </div>
+                        <p style="color:#9ca3af;font-size:13px;margin:0;">
+                            验证码 5 分钟内有效，如非本人操作请忽略此邮件。
+                        </p>
+                    </div>
+                </div>
+                """.formatted(code);
     }
 }

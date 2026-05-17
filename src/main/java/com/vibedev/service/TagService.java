@@ -68,6 +68,32 @@ public class TagService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Find existing tag by board+name, or create a new one if not found.
+     * Auto-assigns sortOrder = max existing + 1.
+     */
+    @Transactional
+    public Tag findOrCreateTag(String boardId, String name) {
+        String trimmed = name.trim();
+        if (trimmed.isEmpty() || trimmed.length() > 20) {
+            throw new BusinessException(ErrorCode.VALIDATION_TAGS, "标签名需1-20个字符");
+        }
+        return tagRepo.findByBoardIdAndName(boardId, trimmed)
+                .orElseGet(() -> {
+                    Tag newTag = new Tag();
+                    newTag.setId(UUID.randomUUID().toString());
+                    newTag.setBoardId(boardId);
+                    newTag.setName(trimmed);
+                    // assign next sort order
+                    var existing = tagRepo.findByBoardIdOrderBySortOrder(boardId);
+                    int nextOrder = existing.isEmpty() ? 0 :
+                            existing.stream().mapToInt(Tag::getSortOrder).max().orElse(0) + 1;
+                    newTag.setSortOrder(nextOrder);
+                    newTag.setPostCount(0);
+                    return tagRepo.save(newTag);
+                });
+    }
+
     private void clearUserProfileCache(String userId) {
         try {
             redis.delete(USER_PROFILE_CACHE_PREFIX + userId + ":tags");
