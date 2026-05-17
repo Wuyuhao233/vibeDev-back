@@ -60,6 +60,14 @@ public class AuthService {
         this.frontendUrl = frontendUrl;
     }
 
+    // ─── Check Username Availability ──────────────────────
+
+    public boolean isUsernameAvailable(String username) {
+        // Only activated & non-deactivated users block a username
+        // (unactivated records are cleaned up during registration)
+        return !userRepo.existsByUsernameAndIsActivatedTrueAndIsDeactivatedFalse(username);
+    }
+
     // ─── Register ─────────────────────────────────────────
 
     @Transactional
