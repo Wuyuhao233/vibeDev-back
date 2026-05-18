@@ -238,7 +238,7 @@ public class UserService {
 
     public AvatarUploadResponse uploadAvatar(MultipartFile file) {
         String path = fileStorageService.storeImage(file);
-        return new AvatarUploadResponse(baseUrl + path);
+        return new AvatarUploadResponse(path);
     }
 
     // ─── Change Password ──────────────────────────────────
