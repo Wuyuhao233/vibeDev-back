@@ -40,6 +40,7 @@ class FeedServiceTest {
     @Mock UserFollowedTagRepository userFollowedTagRepo;
     @Mock BrowsingHistoryRepository browsingHistoryRepo;
     @Mock SystemConfigRepository systemConfigRepo;
+    @Mock FollowService followService;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
@@ -50,7 +51,7 @@ class FeedServiceTest {
     void setUp() {
         feedService = new FeedService(postRepo, postTagRepo, tagRepo,
                 userRepo, boardRepo, boardService, userFollowedTagRepo,
-                browsingHistoryRepo, systemConfigRepo, redis, objectMapper);
+                browsingHistoryRepo, systemConfigRepo, followService, redis, objectMapper);
         when(redis.opsForValue()).thenReturn(valueOps);
         when(systemConfigRepo.findByConfigKey(anyString())).thenReturn(Optional.empty());
     }
@@ -219,20 +220,19 @@ class FeedServiceTest {
     }
 
     @Test
-    void feedFollowing_shouldReturnEmptyWhenNoFollowedTags() {
-        when(userFollowedTagRepo.findByUserId("u1")).thenReturn(List.of());
+    void feedFollowing_shouldReturnEmptyWhenNoFollowedUsers() {
+        when(followService.getFollowingIds("u1")).thenReturn(List.of());
         var result = feedService.feedFollowing("u1", 1, 20);
         assertEquals(0, result.items().size());
         assertEquals(0, result.total());
     }
 
     @Test
-    void feedFollowing_shouldReturnPostsFromFollowedTags() {
-        var uft = new UserFollowedTag("id1", "u1", "t1");
-        when(userFollowedTagRepo.findByUserId("u1")).thenReturn(List.of(uft));
+    void feedFollowing_shouldReturnPostsFromFollowedUsers() {
+        when(followService.getFollowingIds("u1")).thenReturn(List.of("u2"));
 
         var post = createPost("p1", "Followed Post", "u2", "b1");
-        when(postRepo.findByTagIds(eq(List.of("t1")), any())).thenReturn(new PageImpl<>(List.of(post)));
+        when(postRepo.findByAuthorIdIn(eq(List.of("u2")), any())).thenReturn(new PageImpl<>(List.of(post)));
 
         when(postTagRepo.findByPostIdIn(List.of("p1"))).thenReturn(List.of());
         when(postTagRepo.findByPostIdIn(anyList())).thenReturn(List.of());
@@ -246,7 +246,7 @@ class FeedServiceTest {
 
         var result = feedService.feedFollowing("u1", 1, 20);
         assertEquals(1, result.items().size());
-        verify(postRepo).findByTagIds(eq(List.of("t1")), any());
+        verify(postRepo).findByAuthorIdIn(eq(List.of("u2")), any());
     }
 
     // ─── feedRecommend quality scoring ─────────────────────

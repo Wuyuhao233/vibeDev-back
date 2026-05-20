@@ -43,6 +43,7 @@ public class UserService {
     private final FileStorageService fileStorageService;
     private final PasswordEncoder passwordEncoder;
     private final CasService casService;
+    private final FollowService followService;
     private final StringRedisTemplate redis;
 
     static final List<String> NOTIFY_EVENT_TYPES = List.of(
@@ -59,7 +60,7 @@ public class UserService {
                        LoginHistoryRepository loginHistoryRepo, UserExportTaskRepository exportTaskRepo,
                        UserNotificationSettingRepository notifySettingRepo,
                        FileStorageService fileStorageService, PasswordEncoder passwordEncoder,
-                       CasService casService, StringRedisTemplate redis,
+                       CasService casService, FollowService followService, StringRedisTemplate redis,
                        @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
         this.userRepo = userRepo;
         this.postRepo = postRepo;
@@ -73,11 +74,19 @@ public class UserService {
         this.fileStorageService = fileStorageService;
         this.passwordEncoder = passwordEncoder;
         this.casService = casService;
+        this.followService = followService;
         this.redis = redis;
         this.baseUrl = baseUrl;
     }
 
     // ─── Profile ──────────────────────────────────────────
+
+    /** Resolve username to userId */
+    public String resolveUserId(String username) {
+        return userRepo.findByUsername(username)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "用户不存在"))
+                .getId();
+    }
 
     public UserProfile getProfile(String username, String viewerId) {
         var user = userRepo.findByUsername(username)
@@ -92,13 +101,17 @@ public class UserService {
             }
         }
 
+        long followerCount = followService.getFollowerCount(user.getId());
+        long followingCount = followService.getFollowingCount(user.getId());
+
         return new UserProfile(
                 user.getId(), user.getUsername(), email,
                 user.getNickname(), user.getSignature(), user.getAvatarUrl(),
                 user.getRole(), user.getLevel(), PointsService.getLevelTitle(user.getLevel()),
                 user.getPoints(),
                 user.isActivated(), user.isBanned(), user.getBannedUntil(),
-                user.getCreatedAt(), user.getLastLoginAt());
+                user.getCreatedAt(), user.getLastLoginAt(),
+                followerCount, followingCount);
     }
 
     // ─── User Posts ───────────────────────────────────────

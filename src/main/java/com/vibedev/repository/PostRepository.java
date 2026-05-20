@@ -56,6 +56,12 @@ public interface PostRepository extends JpaRepository<Post, String> {
             " ORDER BY p.createdAt DESC")
     Page<Post> findByTagIds(@Param("tagIds") List<String> tagIds, Pageable pageable);
 
+    // Feed: following users (posts by followed users, ordered by created_at DESC)
+    @Query("SELECT p FROM Post p WHERE p.isDeleted = false AND p.auditStatus = 'approved'" +
+            " AND p.authorId IN :authorIds" +
+            " ORDER BY p.createdAt DESC")
+    Page<Post> findByAuthorIdIn(@Param("authorIds") List<String> authorIds, Pageable pageable);
+
     @Query("SELECT p FROM Post p WHERE p.auditStatus = 'approved' AND p.isDeleted = false AND p.createdAt >= :since")
     List<Post> findApprovedSince(@Param("since") Instant since);
 

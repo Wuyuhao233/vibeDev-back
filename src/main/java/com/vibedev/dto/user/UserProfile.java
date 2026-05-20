@@ -17,5 +17,7 @@ public record UserProfile(
         boolean isBanned,
         Instant bannedUntil,
         Instant createdAt,
-        Instant lastLoginAt
+        Instant lastLoginAt,
+        long followerCount,
+        long followingCount
 ) {}

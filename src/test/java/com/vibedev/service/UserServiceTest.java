@@ -46,6 +46,7 @@ class UserServiceTest {
     @Mock FileStorageService fileStorageService;
     @Mock PasswordEncoder passwordEncoder;
     @Mock CasService casService;
+    @Mock FollowService followService;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
@@ -57,7 +58,7 @@ class UserServiceTest {
     void setUp() {
         userService = new UserService(userRepo, postRepo, replyRepo, favoriteRepo,
                 boardRepo, browsingHistoryRepo, loginHistoryRepo, exportTaskRepo,
-                notifySettingRepo, fileStorageService, passwordEncoder, casService, redis, baseUrl);
+                notifySettingRepo, fileStorageService, passwordEncoder, casService, followService, redis, baseUrl);
         when(redis.opsForValue()).thenReturn(valueOps);
     }
 
@@ -84,12 +85,16 @@ class UserServiceTest {
     void getProfile_shouldReturnMaskedEmail() {
         var user = createUser("u1", "alice");
         when(userRepo.findByUsername("alice")).thenReturn(Optional.of(user));
+        when(followService.getFollowerCount("u1")).thenReturn(5L);
+        when(followService.getFollowingCount("u1")).thenReturn(3L);
 
         var profile = userService.getProfile("alice", null);
 
         assertEquals("alice", profile.username());
         assertTrue(profile.email().contains("***"));
         assertEquals("Hello", profile.signature());
+        assertEquals(5L, profile.followerCount());
+        assertEquals(3L, profile.followingCount());
     }
 
     @Test

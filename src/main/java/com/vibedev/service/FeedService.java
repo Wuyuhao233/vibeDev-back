@@ -6,6 +6,7 @@ import com.vibedev.common.PaginatedResponse;
 import com.vibedev.dto.board.*;
 import com.vibedev.entity.*;
 import com.vibedev.repository.*;
+import com.vibedev.service.FollowService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -38,6 +39,7 @@ public class FeedService {
     private final UserFollowedTagRepository userFollowedTagRepo;
     private final BrowsingHistoryRepository browsingHistoryRepo;
     private final SystemConfigRepository systemConfigRepo;
+    private final FollowService followService;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
 
@@ -47,6 +49,7 @@ public class FeedService {
                        UserFollowedTagRepository userFollowedTagRepo,
                        BrowsingHistoryRepository browsingHistoryRepo,
                        SystemConfigRepository systemConfigRepo,
+                       FollowService followService,
                        StringRedisTemplate redis, ObjectMapper objectMapper) {
         this.postRepo = postRepo;
         this.postTagRepo = postTagRepo;
@@ -57,6 +60,7 @@ public class FeedService {
         this.userFollowedTagRepo = userFollowedTagRepo;
         this.browsingHistoryRepo = browsingHistoryRepo;
         this.systemConfigRepo = systemConfigRepo;
+        this.followService = followService;
         this.redis = redis;
         this.objectMapper = objectMapper;
     }
@@ -147,23 +151,22 @@ public class FeedService {
         }
     }
 
-    // ─── Following feed (V1.1) ─────────────────────────────
+    // ─── Following feed (V1.1 → V2: user follow) ────────────
 
     public PaginatedResponse<PostCard> feedFollowing(String userId, int page, int limit) {
         if (userId == null) {
             return PaginatedResponse.of(Collections.emptyList(), 0, page, limit);
         }
 
-        List<UserFollowedTag> followed = userFollowedTagRepo.findByUserId(userId);
-        if (followed.isEmpty()) {
+        List<String> followingIds = followService.getFollowingIds(userId);
+        if (followingIds.isEmpty()) {
             return PaginatedResponse.of(Collections.emptyList(), 0, page, limit);
         }
 
         if (page < 1) page = 1;
         if (limit < 1 || limit > 50) limit = 20;
 
-        List<String> tagIds = followed.stream().map(UserFollowedTag::getTagId).toList();
-        var postsPage = postRepo.findByTagIds(tagIds, PageRequest.of(page - 1, limit));
+        var postsPage = postRepo.findByAuthorIdIn(followingIds, PageRequest.of(page - 1, limit));
         return toPostCardPage(postsPage, page, limit);
     }
 
