@@ -72,7 +72,7 @@ public class FeedService {
         if (limit < 1 || limit > 50) limit = 20;
         Pageable pageable = PageRequest.of(page - 1, limit);
 
-        var postsPage = postRepo.findTrending(Instant.now().minusSeconds(86400), pageable);
+        var postsPage = postRepo.findHotPosts(pageable);
         return toPostCardPage(postsPage, page, limit);
     }
 

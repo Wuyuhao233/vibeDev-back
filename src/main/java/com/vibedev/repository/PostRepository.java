@@ -50,6 +50,11 @@ public interface PostRepository extends JpaRepository<Post, String> {
             " AND p.createdAt >= :since ORDER BY p.heatScore DESC")
     Page<Post> findTrending(@Param("since") Instant since, Pageable pageable);
 
+    // Feed: hot posts (all time, sorted by heat_score DESC)
+    @Query("SELECT p FROM Post p WHERE p.isDeleted = false AND p.auditStatus = 'approved'" +
+            " ORDER BY p.heatScore DESC")
+    Page<Post> findHotPosts(Pageable pageable);
+
     // Feed: following (posts in followed tags, ordered by created_at DESC)
     @Query("SELECT p FROM Post p WHERE p.isDeleted = false AND p.auditStatus = 'approved'" +
             " AND p.id IN (SELECT pt.postId FROM PostTag pt WHERE pt.tagId IN :tagIds)" +

@@ -64,6 +64,7 @@ public class BoardService {
 
         var boards = boardRepo.findByStatusAndIsDeletedFalseOrderBySortOrder("active");
         var items = boards.stream()
+                .filter(b -> !"关注".equals(b.getName()))
                 .map(this::toBoardItem)
                 .toList();
 
