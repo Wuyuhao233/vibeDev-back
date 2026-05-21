@@ -33,7 +33,7 @@ public class AdminSensitiveWordController {
     public ApiResponse<SensitiveWordItem> add(@Valid @RequestBody AddSensitiveWordRequest dto,
                                               Authentication auth) {
         String createdBy = SecurityHelper.getUserId(auth);
-        return ApiResponse.ok(sensitiveWordService.add(dto.word(), dto.matchType(), createdBy));
+        return ApiResponse.ok(sensitiveWordService.add(dto.word(), dto.matchType(), dto.category(), createdBy));
     }
 
     @PutMapping("/sensitive-words/{id}")

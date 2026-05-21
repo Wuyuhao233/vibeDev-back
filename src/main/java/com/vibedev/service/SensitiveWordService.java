@@ -116,7 +116,7 @@ public class SensitiveWordService {
     }
 
     @Transactional
-    public SensitiveWordItem add(String word, String matchType, String createdBy) {
+    public SensitiveWordItem add(String word, String matchType, String category, String createdBy) {
         if (repo.existsByWord(word)) {
             throw new BusinessException(ErrorCode.DUPLICATE_SUBMIT, "该敏感词已存在");
         }
@@ -124,6 +124,7 @@ public class SensitiveWordService {
         entity.setId(UUID.randomUUID().toString());
         entity.setWord(word);
         entity.setMatchType(matchType != null ? matchType : "exact");
+        entity.setCategory(category);
         entity.setCreatedBy(createdBy);
         entity.setActive(true);
         repo.save(entity);
@@ -147,6 +148,9 @@ public class SensitiveWordService {
         }
         if (dto.matchType() != null) {
             entity.setMatchType(dto.matchType());
+        }
+        if (dto.category() != null) {
+            entity.setCategory(dto.category());
         }
         repo.save(entity);
 
@@ -187,6 +191,7 @@ public class SensitiveWordService {
                 entity.setId(UUID.randomUUID().toString());
                 entity.setWord(w.word());
                 entity.setMatchType(w.matchType() != null ? w.matchType() : "exact");
+                entity.setCategory(w.category());
                 entity.setCreatedBy(createdBy);
                 entity.setActive(true);
                 repo.save(entity);

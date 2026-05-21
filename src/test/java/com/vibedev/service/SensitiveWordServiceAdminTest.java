@@ -62,7 +62,7 @@ class SensitiveWordServiceAdminTest {
     void add_duplicateWord_throwsError() {
         when(repo.existsByWord("spam")).thenReturn(true);
 
-        var ex = assertThrows(BusinessException.class, () -> service.add("spam", "exact", "admin1"));
+        var ex = assertThrows(BusinessException.class, () -> service.add("spam", "exact", null, "admin1"));
         assertEquals(ErrorCode.DUPLICATE_SUBMIT.getCode(), ex.getCode());
     }
 
@@ -70,7 +70,7 @@ class SensitiveWordServiceAdminTest {
     void add_success() {
         when(repo.existsByWord("spam")).thenReturn(false);
 
-        var result = service.add("spam", "fuzzy", "admin1");
+        var result = service.add("spam", "fuzzy", null, "admin1");
 
         assertNotNull(result);
         assertEquals("spam", result.word());
@@ -81,7 +81,7 @@ class SensitiveWordServiceAdminTest {
     void update_notFound_throwsError() {
         when(repo.findById("notexist")).thenReturn(Optional.empty());
 
-        var dto = new UpdateSensitiveWordRequest("new", null);
+        var dto = new UpdateSensitiveWordRequest("new", null, null);
         var ex = assertThrows(BusinessException.class, () -> service.update("notexist", dto));
         assertEquals(ErrorCode.NOT_FOUND.getCode(), ex.getCode());
     }
@@ -103,8 +103,8 @@ class SensitiveWordServiceAdminTest {
         when(repo.existsByWord("ad")).thenReturn(false);
 
         var words = List.of(
-                new AddSensitiveWordRequest("spam", "exact"),
-                new AddSensitiveWordRequest("ad", "fuzzy"));
+                new AddSensitiveWordRequest("spam", "exact", null),
+                new AddSensitiveWordRequest("ad", "fuzzy", null));
         var result = service.batchImport(words, "admin1");
 
         assertEquals(1, result.size());

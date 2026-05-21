@@ -4,5 +4,6 @@ import jakarta.validation.constraints.NotBlank;
 
 public record AddSensitiveWordRequest(
         @NotBlank String word,
-        @NotBlank String matchType
+        String matchType,
+        String category
 ) {}

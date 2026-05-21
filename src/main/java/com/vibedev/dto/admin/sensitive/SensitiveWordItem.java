@@ -4,12 +4,12 @@ import com.vibedev.entity.SensitiveWord;
 import java.time.Instant;
 
 public record SensitiveWordItem(
-        String id, String word, String matchType, boolean isActive,
+        String id, String word, String matchType, String category, boolean isActive,
         String createdBy, Instant createdAt
 ) {
     public static SensitiveWordItem from(SensitiveWord sw) {
         return new SensitiveWordItem(
-                sw.getId(), sw.getWord(), sw.getMatchType(), sw.isActive(),
+                sw.getId(), sw.getWord(), sw.getMatchType(), sw.getCategory(), sw.isActive(),
                 sw.getCreatedBy(), sw.getCreatedAt()
         );
     }
