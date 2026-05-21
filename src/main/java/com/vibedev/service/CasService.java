@@ -1,10 +1,12 @@
 package com.vibedev.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vibedev.common.BusinessException;
 import com.vibedev.common.ErrorCode;
 import com.vibedev.config.CasConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -20,14 +22,21 @@ public class CasService {
 
     private static final Logger log = LoggerFactory.getLogger(CasService.class);
 
+    private static final String MOCK_TICKET_PREFIX = "ST-mock-";
+    private static final String TICKET_KEY_PREFIX = "cas:ticket:";
+
     private final CasConfig casConfig;
+    private final StringRedisTemplate redis;
     private final RestClient restClient;
     private final XMLInputFactory xmlInputFactory;
+    private final ObjectMapper objectMapper;
 
-    public CasService(CasConfig casConfig) {
+    public CasService(CasConfig casConfig, StringRedisTemplate redis) {
         this.casConfig = casConfig;
+        this.redis = redis;
         this.restClient = RestClient.builder().build();
         this.xmlInputFactory = XMLInputFactory.newInstance();
+        this.objectMapper = new ObjectMapper();
         // prevent XXE
         this.xmlInputFactory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
         this.xmlInputFactory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
@@ -42,6 +51,25 @@ public class CasService {
      * @throws BusinessException if ticket is invalid or CAS server is unreachable
      */
     public CasUserAttributes validateTicket(String ticket, String service) {
+        // Check mock ticket in Redis first
+        if (ticket != null && ticket.startsWith(MOCK_TICKET_PREFIX)) {
+            String json = redis.opsForValue().get(TICKET_KEY_PREFIX + ticket);
+            if (json != null) {
+                // Delete the ticket after first use (one-time use)
+                redis.delete(TICKET_KEY_PREFIX + ticket);
+                try {
+                    var attrs = objectMapper.readValue(json, CasUserAttributes.class);
+                    log.info("Mock CAS ticket validated: {} -> {}", ticket, attrs.email());
+                    return attrs;
+                } catch (Exception e) {
+                    log.error("Failed to parse mock ticket JSON: {}", e.getMessage());
+                    throw new BusinessException(ErrorCode.UNAUTHORIZED, "CAS ticket 无效");
+                }
+            }
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "CAS ticket 无效或已过期");
+        }
+
+        // Fall through to real CAS server validation
         String validateUrl = casConfig.getServiceValidateUrl()
                 + "?ticket=" + ticket + "&service=" + service;
 
