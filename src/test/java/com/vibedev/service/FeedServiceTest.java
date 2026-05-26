@@ -85,7 +85,8 @@ class FeedServiceTest {
         return new PostCard(p.getId(), p.getTitle(), "summary",
                 p.getCoverImageUrl(), authorDto, p.getCreatedAt(),
                 p.getLikeCount(), p.getReplyCount(), p.getCollectCount(),
-                Collections.emptyList(), p.isPinned(), p.isEssence(), boardName);
+                Collections.emptyList(), p.isPinned(), p.isEssence(), boardName,
+                false, false);
     }
 
     // ─── feedTrending ─────────────────────────────────────
@@ -101,10 +102,10 @@ class FeedServiceTest {
         when(userRepo.findAllById(List.of("u1"))).thenReturn(List.of(author));
         when(boardRepo.findAllById(List.of("b1"))).thenReturn(List.of(board));
         when(boardService.buildTagsByPostId(anyList())).thenReturn(Collections.emptyMap());
-        when(boardService.toPostCard(any(), any(), any(), anyString()))
+        when(boardService.toPostCard(any(), any(), any(), anyString(), any()))
                 .thenReturn(createPostCard(post, author, "TestBoard"));
 
-        var result = feedService.feedTrending(1, 20);
+        var result = feedService.feedTrending(1, 20, null);
         assertNotNull(result);
         assertEquals(1, result.items().size());
         verify(postRepo).findTrending(any(), any());
@@ -113,14 +114,14 @@ class FeedServiceTest {
     @Test
     void feedTrending_shouldCapLimitAt50() {
         when(postRepo.findTrending(any(), any())).thenReturn(new PageImpl<>(List.of()));
-        var result = feedService.feedTrending(1, 100);
+        var result = feedService.feedTrending(1, 100, null);
         assertNotNull(result);
     }
 
     @Test
     void feedTrending_shouldReturnEmptyForNoPosts() {
         when(postRepo.findTrending(any(), any())).thenReturn(new PageImpl<>(List.of()));
-        var result = feedService.feedTrending(1, 20);
+        var result = feedService.feedTrending(1, 20, null);
         assertEquals(0, result.items().size());
         assertEquals(0, result.total());
     }
@@ -135,7 +136,7 @@ class FeedServiceTest {
         when(userRepo.findAllById(List.of("u1"))).thenReturn(List.of());
         when(boardRepo.findAllById(List.of("b1"))).thenReturn(List.of());
         when(boardService.buildTagsByPostId(anyList())).thenReturn(Collections.emptyMap());
-        when(boardService.toPostCard(any(), any(), any(), anyString()))
+        when(boardService.toPostCard(any(), any(), any(), anyString(), any()))
                 .thenReturn(createPostCard(post, createUser("u1", "alice", 1), "Board"));
 
         var result = feedService.feedRecommend(null, 1, 20);
@@ -156,7 +157,7 @@ class FeedServiceTest {
         when(userRepo.findAllById(List.of("u2"))).thenReturn(List.of());
         when(boardRepo.findAllById(List.of("b1"))).thenReturn(List.of());
         when(boardService.buildTagsByPostId(anyList())).thenReturn(Collections.emptyMap());
-        when(boardService.toPostCard(any(), any(), any(), anyString()))
+        when(boardService.toPostCard(any(), any(), any(), anyString(), any()))
                 .thenReturn(createPostCard(post, createUser("u2", "bob", 1), "Board"));
 
         var result = feedService.feedRecommend("u1", 1, 20);
@@ -197,7 +198,7 @@ class FeedServiceTest {
         when(boardRepo.findAllById(anyList())).thenReturn(List.of(board));
 
         when(boardService.buildTagsByPostId(anyList())).thenReturn(Collections.emptyMap());
-        when(boardService.toPostCard(any(), any(), any(), anyString()))
+        when(boardService.toPostCard(any(), any(), any(), anyString(), any()))
                 .thenReturn(createPostCard(post, author, "TestBoard"));
 
         // Cache miss
@@ -241,7 +242,7 @@ class FeedServiceTest {
         when(boardRepo.findAllById(List.of("b1"))).thenReturn(List.of());
         when(boardRepo.findAllById(anyList())).thenReturn(List.of());
         when(boardService.buildTagsByPostId(anyList())).thenReturn(Collections.emptyMap());
-        when(boardService.toPostCard(any(), any(), any(), anyString()))
+        when(boardService.toPostCard(any(), any(), any(), anyString(), any()))
                 .thenReturn(createPostCard(post, createUser("u2", "bob", 1), "Board"));
 
         var result = feedService.feedFollowing("u1", 1, 20);
@@ -280,9 +281,9 @@ class FeedServiceTest {
         var board = new Board(); board.setId("b1"); board.setName("TestBoard");
         when(boardRepo.findAllById(anyList())).thenReturn(List.of(board));
         when(boardService.buildTagsByPostId(anyList())).thenReturn(Collections.emptyMap());
-        when(boardService.toPostCard(eq(post1), any(), any(), anyString()))
+        when(boardService.toPostCard(eq(post1), any(), any(), anyString(), any()))
                 .thenReturn(createPostCard(post1, author2, "TestBoard"));
-        when(boardService.toPostCard(eq(post2), any(), any(), anyString()))
+        when(boardService.toPostCard(eq(post2), any(), any(), anyString(), any()))
                 .thenReturn(createPostCard(post2, author3, "TestBoard"));
 
         when(valueOps.get(contains("feed:recommend:u1:1"))).thenReturn(null);

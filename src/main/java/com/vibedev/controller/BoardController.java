@@ -4,6 +4,7 @@ import com.vibedev.common.ApiResponse;
 import com.vibedev.common.PaginatedResponse;
 import com.vibedev.dto.board.*;
 import com.vibedev.service.BoardService;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -39,8 +40,10 @@ public class BoardController {
             @RequestParam(required = false) String tag,
             @RequestParam(defaultValue = "hot") String sort,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int limit) {
+            @RequestParam(defaultValue = "20") int limit,
+            Authentication auth) {
         if (limit > 50) limit = 50;
-        return ApiResponse.ok(boardService.getBoardPosts(id, tag, sort, page, limit));
+        String userId = auth != null ? auth.getPrincipal().toString() : null;
+        return ApiResponse.ok(boardService.getBoardPosts(id, tag, sort, page, limit, userId));
     }
 }

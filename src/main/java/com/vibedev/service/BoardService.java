@@ -35,18 +35,23 @@ public class BoardService {
     private final PostRepository postRepo;
     private final PostTagRepository postTagRepo;
     private final UserRepository userRepo;
+    private final LikeRepository likeRepo;
+    private final FavoriteRepository favoriteRepo;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
 
     public BoardService(BoardRepository boardRepo, TagRepository tagRepo,
                         PostRepository postRepo, PostTagRepository postTagRepo,
-                        UserRepository userRepo, StringRedisTemplate redis,
-                        ObjectMapper objectMapper) {
+                        UserRepository userRepo,
+                        LikeRepository likeRepo, FavoriteRepository favoriteRepo,
+                        StringRedisTemplate redis, ObjectMapper objectMapper) {
         this.boardRepo = boardRepo;
         this.tagRepo = tagRepo;
         this.postRepo = postRepo;
         this.postTagRepo = postTagRepo;
         this.userRepo = userRepo;
+        this.likeRepo = likeRepo;
+        this.favoriteRepo = favoriteRepo;
         this.redis = redis;
         this.objectMapper = objectMapper;
     }
@@ -95,7 +100,7 @@ public class BoardService {
     }
 
     public PaginatedResponse<PostCard> getBoardPosts(String boardId, String tagId,
-                                                      String sort, int page, int limit) {
+                                                      String sort, int page, int limit, String currentUserId) {
         var board = boardRepo.findByIdAndIsDeletedFalse(boardId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "版块不存在"));
 
@@ -117,7 +122,7 @@ public class BoardService {
 
         var items = postsPage.getContent().stream()
                 .map(p -> toPostCard(p, tagsByPostId.getOrDefault(p.getId(), Collections.emptyList()),
-                        usersById.get(p.getAuthorId()), board.getName()))
+                        usersById.get(p.getAuthorId()), board.getName(), currentUserId))
                 .toList();
 
         return PaginatedResponse.of(items, postsPage.getTotalElements(), page, limit);
@@ -137,7 +142,7 @@ public class BoardService {
         return new TagItem(t.getId(), t.getName(), t.getBoardId(), t.getSortOrder(), t.getPostCount());
     }
 
-    public PostCard toPostCard(Post p, List<TagItem> tags, User author, String boardName) {
+    public PostCard toPostCard(Post p, List<TagItem> tags, User author, String boardName, String currentUserId) {
         String summary = "";
         if (p.getContentMarkdown() != null) {
             String plain = p.getContentMarkdown()
@@ -156,9 +161,13 @@ public class BoardService {
                     author.getAvatarUrl(), author.getLevel())
                 : new PostCardAuthor("unknown", "未知用户", "", 1);
 
+        boolean isLiked = currentUserId != null && likeRepo.existsByUserIdAndTargetTypeAndTargetId(currentUserId, "post", p.getId());
+        boolean isCollected = currentUserId != null && favoriteRepo.findByUserIdAndPostId(currentUserId, p.getId()).isPresent();
+
         return new PostCard(p.getId(), p.getTitle(), summary, p.getCoverImageUrl(),
                 authorDto, p.getCreatedAt(), p.getLikeCount(), p.getReplyCount(),
-                p.getCollectCount(), tags, p.isPinned(), p.isEssence(), boardName);
+                p.getCollectCount(), tags, p.isPinned(), p.isEssence(), boardName,
+                isLiked, isCollected);
     }
 
     public Map<String, List<TagItem>> buildTagsByPostId(List<String> postIds) {

@@ -16,5 +16,7 @@ public record PostCard(
         List<TagItem> tags,
         boolean isPinned,
         boolean isEssence,
-        String boardName) {
+        String boardName,
+        boolean isLiked,
+        boolean isCollected) {
 }

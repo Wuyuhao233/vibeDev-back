@@ -30,7 +30,7 @@ public class FeedController {
         return switch (tab) {
             case "recommend" -> ApiResponse.ok(feedService.feedRecommend(userId, page, limit));
             case "following" -> ApiResponse.ok(feedService.feedFollowing(userId, page, limit));
-            default -> ApiResponse.ok(feedService.feedTrending(page, limit));
+            default -> ApiResponse.ok(feedService.feedTrending(page, limit, userId));
         };
     }
 }

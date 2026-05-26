@@ -67,23 +67,23 @@ public class FeedService {
 
     // ─── Trending feed ─────────────────────────────────────
 
-    public PaginatedResponse<PostCard> feedTrending(int page, int limit) {
+    public PaginatedResponse<PostCard> feedTrending(int page, int limit, String currentUserId) {
         if (page < 1) page = 1;
         if (limit < 1 || limit > 50) limit = 20;
         Pageable pageable = PageRequest.of(page - 1, limit);
 
         var postsPage = postRepo.findHotPosts(pageable);
-        return toPostCardPage(postsPage, page, limit);
+        return toPostCardPage(postsPage, page, limit, currentUserId);
     }
 
     // ─── Recommend feed (V1.1 rule engine) ─────────────────
 
     public PaginatedResponse<PostCard> feedRecommend(String userId, int page, int limit) {
         if (userId == null) {
-            return feedTrending(page, limit);
+            return feedTrending(page, limit, null);
         }
         if (isColdStart(userId)) {
-            return feedTrending(page, limit);
+            return feedTrending(page, limit, userId);
         }
 
         if (page < 1) page = 1;
@@ -139,7 +139,7 @@ public class FeedService {
             List<ScoredPost> paged = scored.subList(fromIndex, toIndex);
 
             List<PostCard> items = paged.stream()
-                    .map(sp -> boardService.toPostCard(sp.post, sp.tags, sp.author, sp.boardName))
+                    .map(sp -> boardService.toPostCard(sp.post, sp.tags, sp.author, sp.boardName, userId))
                     .toList();
 
             var result = PaginatedResponse.of(items, scored.size(), page, limit);
@@ -147,7 +147,7 @@ public class FeedService {
             return result;
         } catch (Exception e) {
             log.warn("Recommend engine failed, degrading to trending: {}", e.getMessage());
-            return feedTrending(page, limit);
+            return feedTrending(page, limit, userId);
         }
     }
 
@@ -167,7 +167,7 @@ public class FeedService {
         if (limit < 1 || limit > 50) limit = 20;
 
         var postsPage = postRepo.findByAuthorIdIn(followingIds, PageRequest.of(page - 1, limit));
-        return toPostCardPage(postsPage, page, limit);
+        return toPostCardPage(postsPage, page, limit, userId);
     }
 
     // ─── Scoring logic ─────────────────────────────────────
@@ -346,7 +346,7 @@ public class FeedService {
     // ─── PostCard enrichment helpers ───────────────────────
 
     private PaginatedResponse<PostCard> toPostCardPage(
-            org.springframework.data.domain.Page<Post> postsPage, int page, int limit) {
+            org.springframework.data.domain.Page<Post> postsPage, int page, int limit, String currentUserId) {
         var postIds = postsPage.getContent().stream().map(Post::getId).toList();
         var tagsByPostId = boardService.buildTagsByPostId(postIds);
         var usersById = buildUsersById(postsPage.getContent().stream()
@@ -358,7 +358,8 @@ public class FeedService {
                 .map(p -> boardService.toPostCard(p,
                         tagsByPostId.getOrDefault(p.getId(), Collections.emptyList()),
                         usersById.get(p.getAuthorId()),
-                        boardsById.getOrDefault(p.getBoardId(), "")))
+                        boardsById.getOrDefault(p.getBoardId(), ""),
+                        currentUserId))
                 .toList();
 
         return PaginatedResponse.of(items, postsPage.getTotalElements(), page, limit);

@@ -184,7 +184,7 @@ class BoardServiceTest {
         var user = createUser("u1", "alice", 3);
         when(userRepo.findAllById(List.of("u1"))).thenReturn(List.of(user));
 
-        var result = boardService.getBoardPosts("b1", null, "hot", 1, 20);
+        var result = boardService.getBoardPosts("b1", null, "hot", 1, 20, null);
 
         assertEquals(1, result.items().size());
         var card = result.items().get(0);
@@ -213,7 +213,7 @@ class BoardServiceTest {
         when(postTagRepo.findByPostIdIn(List.of("p1"))).thenReturn(List.of());
         when(userRepo.findAllById(List.of("u1"))).thenReturn(List.of(createUser("u1", "alice", 1)));
 
-        var result = boardService.getBoardPosts("b1", null, "latest", 1, 20);
+        var result = boardService.getBoardPosts("b1", null, "latest", 1, 20, null);
 
         assertEquals(1, result.items().size());
         assertEquals("Latest Post", result.items().get(0).title());
@@ -240,7 +240,7 @@ class BoardServiceTest {
         when(postTagRepo.findByPostIdIn(List.of("p1"))).thenReturn(List.of());
         when(userRepo.findAllById(List.of("u1"))).thenReturn(List.of(createUser("u1", "alice", 1)));
 
-        var result = boardService.getBoardPosts("b1", null, "trending", 1, 20);
+        var result = boardService.getBoardPosts("b1", null, "trending", 1, 20, null);
 
         assertEquals(1, result.items().size());
         assertEquals("Trending Post", result.items().get(0).title());
@@ -251,7 +251,7 @@ class BoardServiceTest {
         when(boardRepo.findByIdAndIsDeletedFalse("b99")).thenReturn(Optional.empty());
 
         var ex = assertThrows(BusinessException.class,
-                () -> boardService.getBoardPosts("b99", null, "hot", 1, 20));
+                () -> boardService.getBoardPosts("b99", null, "hot", 1, 20, null));
         assertEquals(ErrorCode.NOT_FOUND.getCode(), ex.getCode());
     }
 
@@ -263,7 +263,7 @@ class BoardServiceTest {
                 new PageImpl<>(List.of()));
 
         // limit > 50 gets capped to 20
-        var result = boardService.getBoardPosts("b1", null, "hot", 1, 100);
+        var result = boardService.getBoardPosts("b1", null, "hot", 1, 100, null);
 
         assertEquals(50, result.pageSize());
     }
@@ -275,7 +275,7 @@ class BoardServiceTest {
         when(postRepo.findByBoardIdHot(eq("b1"), isNull(), any())).thenReturn(
                 new PageImpl<>(List.of()));
 
-        var result = boardService.getBoardPosts("b1", null, "hot", 1, 20);
+        var result = boardService.getBoardPosts("b1", null, "hot", 1, 20, null);
 
         assertEquals(0, result.items().size());
         assertEquals(0, result.total());
@@ -296,7 +296,7 @@ class BoardServiceTest {
         var user = createUser("u1", "alice", 2);
         var tags = List.<TagItem>of();
 
-        var card = boardService.toPostCard(post, tags, user, "Frontend");
+        var card = boardService.toPostCard(post, tags, user, "Frontend", null);
 
         assertTrue(card.contentSummary().contains("Heading"));
         assertTrue(card.contentSummary().contains("bold"));
@@ -316,7 +316,7 @@ class BoardServiceTest {
         post.setBoardId("b1");
         post.setCreatedAt(Instant.now());
 
-        var card = boardService.toPostCard(post, List.of(), null, "Frontend");
+        var card = boardService.toPostCard(post, List.of(), null, "Frontend", null);
 
         assertEquals("unknown", card.author().username());
         assertEquals("未知用户", card.author().nickname());
