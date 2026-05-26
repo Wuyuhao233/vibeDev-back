@@ -28,6 +28,9 @@ public class ModerationQueue {
     @Column(name = "ai_category", length = 50)
     private String aiCategory;
 
+    @Column(name = "ai_snippet", length = 200)
+    private String aiSnippet;
+
     @JdbcTypeCode(Types.TINYINT)
     @Column(name = "ai_degraded")
     private boolean aiDegraded = false;
@@ -76,6 +79,8 @@ public class ModerationQueue {
     public void setAiScore(int aiScore) { this.aiScore = aiScore; }
     public String getAiCategory() { return aiCategory; }
     public void setAiCategory(String aiCategory) { this.aiCategory = aiCategory; }
+    public String getAiSnippet() { return aiSnippet; }
+    public void setAiSnippet(String aiSnippet) { this.aiSnippet = aiSnippet; }
     public boolean isAiDegraded() { return aiDegraded; }
     public void setAiDegraded(boolean aiDegraded) { this.aiDegraded = aiDegraded; }
     public int getPriority() { return priority; }

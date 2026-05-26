@@ -110,3 +110,10 @@ logging:
   level:
     com.vibedev: DEBUG
     org.springframework.security: INFO
+
+# ── DeepSeek AI Moderation ──────────────────────
+ai:
+  moderation:
+    api-key: ${AI_MODERATION_API_KEY:sk-c215011e5c8243008603d98c10d7d727}
+    model: ${AI_MODERATION_MODEL:deepseek-v4-flash}
+    base-url: ${AI_MODERATION_BASE_URL:https://api.deepseek.com/v1}

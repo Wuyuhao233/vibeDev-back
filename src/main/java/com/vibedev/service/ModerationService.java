@@ -71,7 +71,7 @@ public class ModerationService {
         // 1. Check monthly budget
         if (isBudgetExceeded()) {
             enqueueForManualReview(targetType, targetId, content, userId, title, boardId,
-                    -1, "unknown", true, 0);
+                    -1, "unknown", true, 0, "");
             log.info("Monthly budget exceeded, degraded to manual review for {}:{}", targetType, targetId);
             return;
         }
@@ -98,7 +98,7 @@ public class ModerationService {
         // 4. Process result
         if (result.degraded()) {
             enqueueForManualReview(targetType, targetId, content, userId, title, boardId,
-                    -1, "unknown", true, 0);
+                    -1, "unknown", true, 0, "");
         } else {
             processAiResult(targetType, targetId, content, userId, title, boardId, result);
         }
@@ -119,17 +119,20 @@ public class ModerationService {
             createAuditLog(targetType, targetId, "ai_rejected", null,
                     "AI自动拦截: " + result.category() + " - " + result.reason());
             enqueueRecord(targetType, targetId, content, userId, title, boardId,
-                    score, result.category(), false, "rejected", 0);
+                    score, result.category(), false, "rejected", 0, result.snippet());
+            // Build notification with violating snippet
+            String notifyMsg = "你的内容因「" + result.category() + "」被拦截：" + result.reason();
+            if (result.snippet() != null && !result.snippet().isBlank()) {
+                notifyMsg += "\n\n违规片段：\n「" + result.snippet() + "」";
+            }
             notificationService.create(userId, "content_rejected",
-                    "内容未通过审核",
-                    "你的内容因「" + result.category() + "」被拦截：" + result.reason(),
-                    targetType, targetId);
+                    "内容未通过审核", notifyMsg, targetType, targetId);
             log.debug("AI auto-rejected {}:{} (score={}, category={})",
                     targetType, targetId, score, result.category());
         } else {
             // Needs manual review
             enqueueForManualReview(targetType, targetId, content, userId, title, boardId,
-                    score, result.category(), false, 0);
+                    score, result.category(), false, 0, result.snippet());
             updateContentStatus(targetType, targetId, "pending_review");
             log.debug("Content {}:{} queued for manual review (score={}, category={})",
                     targetType, targetId, score, result.category());
@@ -353,16 +356,17 @@ public class ModerationService {
 
     private void enqueueForManualReview(String targetType, String targetId, String content,
                                         String userId, String title, String boardId,
-                                        int score, String category, boolean degraded, int priority) {
+                                        int score, String category, boolean degraded, int priority,
+                                        String snippet) {
         enqueueRecord(targetType, targetId, content, userId, title, boardId,
-                score, category, degraded, "pending", priority);
+                score, category, degraded, "pending", priority, snippet);
         updateContentStatus(targetType, targetId, "pending_review");
     }
 
     private void enqueueRecord(String targetType, String targetId, String content,
                                String userId, String title, String boardId,
                                int score, String category, boolean degraded,
-                               String status, int priority) {
+                               String status, int priority, String snippet) {
         var q = new ModerationQueue();
         q.setId(UUID.randomUUID().toString());
         q.setTargetType(targetType);
@@ -373,6 +377,7 @@ public class ModerationService {
         q.setBoardId(boardId);
         q.setAiScore(score);
         q.setAiCategory(category);
+        q.setAiSnippet(snippet);
         q.setAiDegraded(degraded);
         q.setPriority(priority);
         q.setStatus(status);

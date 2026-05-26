@@ -285,7 +285,7 @@ class ModerationServiceTest {
 
         when(aiAuditLogRepo.sumCostSince(any())).thenReturn(BigDecimal.ZERO);
         when(aiModerationClient.audit(anyString()))
-                .thenReturn(new AuditResult(30, "normal", "内容正常", false));
+                .thenReturn(new AuditResult(30, "normal", "内容正常", "", false));
         when(postRepo.findById("p1")).thenReturn(Optional.of(post));
 
         moderationService.reviewAsync("post", "p1", "normal content", "u1",
@@ -306,7 +306,7 @@ class ModerationServiceTest {
 
         when(aiAuditLogRepo.sumCostSince(any())).thenReturn(BigDecimal.ZERO);
         when(aiModerationClient.audit(anyString()))
-                .thenReturn(new AuditResult(65, "spam", "疑似违规", false));
+                .thenReturn(new AuditResult(65, "spam", "疑似违规", "", false));
         when(postRepo.findById("p1")).thenReturn(Optional.of(post));
 
         moderationService.reviewAsync("post", "p1", "spam content", "u1",
@@ -325,7 +325,7 @@ class ModerationServiceTest {
 
         when(aiAuditLogRepo.sumCostSince(any())).thenReturn(BigDecimal.ZERO);
         when(aiModerationClient.audit(anyString()))
-                .thenReturn(new AuditResult(90, "色情", "内容包含违规信息", false));
+                .thenReturn(new AuditResult(90, "色情", "内容包含违规信息", "", false));
         when(postRepo.findById("p1")).thenReturn(Optional.of(post));
 
         moderationService.reviewAsync("post", "p1", "bad content", "u1",
@@ -346,7 +346,7 @@ class ModerationServiceTest {
 
         when(aiAuditLogRepo.sumCostSince(any())).thenReturn(BigDecimal.ZERO);
         when(aiModerationClient.audit(anyString()))
-                .thenReturn(new AuditResult(-1, "unknown", "AI审核服务不可用", true));
+                .thenReturn(new AuditResult(-1, "unknown", "AI审核服务不可用", "", true));
         when(postRepo.findById("p1")).thenReturn(Optional.of(post));
 
         moderationService.reviewAsync("post", "p1", "content", "u1",
