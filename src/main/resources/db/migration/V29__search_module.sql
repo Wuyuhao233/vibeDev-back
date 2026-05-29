@@ -1,14 +1,9 @@
--- Drop existing FULLTEXT index (without ngram parser, created in V9)
-ALTER TABLE posts DROP INDEX idx_posts_title_content;
+-- MariaDB doesn't support ngram parser. Keep default FULLTEXT indexes.
+-- The existing idx_posts_title_content (V9) is already sufficient for basic FTS.
+-- For CJK support on MariaDB, consider installing the Mroonga storage engine.
 
--- Recreate with ngram parser for Chinese text segmentation support
-ALTER TABLE posts ADD FULLTEXT INDEX idx_posts_title_content (title, content_markdown) WITH PARSER ngram;
-
--- Title-only FULLTEXT index for scope=title_only searches
-ALTER TABLE posts ADD FULLTEXT INDEX idx_posts_title (title) WITH PARSER ngram;
-
--- Search logs table for tracking search queries and measuring performance
-CREATE TABLE search_logs (
+-- Only add the search_logs table since FULLTEXT indexes already exist from V9
+CREATE TABLE IF NOT EXISTS search_logs (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     keyword VARCHAR(100) NOT NULL,
     scope VARCHAR(20) NOT NULL DEFAULT 'all',

@@ -36,6 +36,8 @@ class BoardServiceTest {
     @Mock PostRepository postRepo;
     @Mock PostTagRepository postTagRepo;
     @Mock UserRepository userRepo;
+    @Mock LikeRepository likeRepo;
+    @Mock FavoriteRepository favoriteRepo;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
@@ -46,7 +48,7 @@ class BoardServiceTest {
     @BeforeEach
     void setUp() {
         boardService = new BoardService(boardRepo, tagRepo, postRepo, postTagRepo,
-                userRepo, redis, objectMapper);
+                userRepo, likeRepo, favoriteRepo, redis, objectMapper);
         when(redis.opsForValue()).thenReturn(valueOps);
     }
 
