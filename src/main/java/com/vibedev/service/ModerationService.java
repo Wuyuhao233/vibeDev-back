@@ -302,8 +302,10 @@ public class ModerationService {
 
         // Queue stats
         long pendingCount = queueRepo.countByStatus("pending");
-        long todayApproved = queueRepo.countApprovedSince(todayStart);
-        long todayRejected = queueRepo.countRejectedSince(todayStart);
+        long todayApproved = queueRepo.countApprovedSince(todayStart)
+                + aiAuditLogRepo.countByScoreLessThanSince(50, todayStart);
+        long todayRejected = queueRepo.countRejectedSince(todayStart)
+                + aiAuditLogRepo.countByScoreAtLeastSince(85, todayStart);
 
         // Report stats
         long reportPending = reportRepo.countByStatus("pending");
