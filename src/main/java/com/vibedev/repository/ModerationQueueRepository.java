@@ -24,6 +24,19 @@ public interface ModerationQueueRepository extends JpaRepository<ModerationQueue
     Page<ModerationQueue> findByStatusAndTargetTypeAndBoardIdInOrderByPriorityDescCreatedAtAsc(
             String status, String targetType, List<String> boardIds, Pageable pageable);
 
+    // ─── "All" status queries (no status filter) ──────
+
+    Page<ModerationQueue> findAllByOrderByPriorityDescCreatedAtAsc(Pageable pageable);
+
+    Page<ModerationQueue> findByBoardIdInOrderByPriorityDescCreatedAtAsc(
+            List<String> boardIds, Pageable pageable);
+
+    Page<ModerationQueue> findByTargetTypeOrderByPriorityDescCreatedAtAsc(
+            String targetType, Pageable pageable);
+
+    Page<ModerationQueue> findByTargetTypeAndBoardIdInOrderByPriorityDescCreatedAtAsc(
+            String targetType, List<String> boardIds, Pageable pageable);
+
     Optional<ModerationQueue> findByTargetTypeAndTargetIdAndStatus(String targetType, String targetId, String status);
 
     Optional<ModerationQueue> findFirstByTargetTypeAndTargetIdAndAiScoreGreaterThanOrderByAiScoreDesc(

@@ -81,7 +81,7 @@ public class AiModerationClient {
                             Map.of("role", "user", "content", "请审核以下内容：\n\n" + truncated)
                     ),
                     "temperature", 0.1,
-                    "max_tokens", 256
+                    "max_tokens", 512
             );
 
             String response = restClient.post()

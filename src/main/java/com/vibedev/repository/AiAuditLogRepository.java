@@ -26,4 +26,10 @@ public interface AiAuditLogRepository extends JpaRepository<AiAuditLog, String> 
            "FROM AiAuditLog a WHERE a.createdAt >= :since " +
            "GROUP BY FUNCTION('DATE', a.createdAt) ORDER BY FUNCTION('DATE', a.createdAt)")
     List<Object[]> dailyBreakdownSince(@Param("since") Instant since);
+
+    @Query("SELECT COUNT(a) FROM AiAuditLog a WHERE a.responseScore >= 0 AND a.responseScore < :maxScore AND a.createdAt >= :since")
+    long countByScoreLessThanSince(@Param("maxScore") int maxScore, @Param("since") Instant since);
+
+    @Query("SELECT COUNT(a) FROM AiAuditLog a WHERE a.responseScore >= :minScore AND a.createdAt >= :since")
+    long countByScoreAtLeastSince(@Param("minScore") int minScore, @Param("since") Instant since);
 }

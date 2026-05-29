@@ -86,12 +86,13 @@ public class ModerationService {
         aiLog.setId(UUID.randomUUID().toString());
         aiLog.setTargetType(targetType);
         aiLog.setTargetId(targetId);
+        aiLog.setApiProvider(result.degraded() ? "manual" : "deepseek");
         aiLog.setRequestChars(content != null ? content.length() : 0);
         aiLog.setResponseScore(result.score());
         aiLog.setResponseCategory(result.category());
         aiLog.setDegraded(result.degraded());
         aiLog.setResponseTimeMs((int) elapsed);
-        // Mock cost: ~0.001 CNY per 1000 chars
+        // Cost: ~0.001 CNY per 1000 chars
         aiLog.setCost(BigDecimal.valueOf(Math.max(0.0001, (content != null ? content.length() : 0) * 0.000001)));
         aiAuditLogRepo.save(aiLog);
 
@@ -257,21 +258,38 @@ public class ModerationService {
 
     private org.springframework.data.domain.Page<ModerationQueue> getQueuePage(
             ReviewQueueFilter filter, List<String> boardIds, PageRequest pageable) {
+        String status = filter.status();
+        boolean isAll = "all".equalsIgnoreCase(status);
         boolean hasBoardFilter = boardIds != null && !boardIds.isEmpty();
         boolean hasTypeFilter = filter.targetType() != null && !filter.targetType().isBlank();
 
+        if (isAll) {
+            // Query without status filter
+            if (hasBoardFilter && hasTypeFilter) {
+                return queueRepo.findByTargetTypeAndBoardIdInOrderByPriorityDescCreatedAtAsc(
+                        filter.targetType(), boardIds, pageable);
+            } else if (hasBoardFilter) {
+                return queueRepo.findByBoardIdInOrderByPriorityDescCreatedAtAsc(boardIds, pageable);
+            } else if (hasTypeFilter) {
+                return queueRepo.findByTargetTypeOrderByPriorityDescCreatedAtAsc(
+                        filter.targetType(), pageable);
+            } else {
+                return queueRepo.findAllByOrderByPriorityDescCreatedAtAsc(pageable);
+            }
+        }
+
         if (hasBoardFilter && hasTypeFilter) {
             return queueRepo.findByStatusAndTargetTypeAndBoardIdInOrderByPriorityDescCreatedAtAsc(
-                    filter.status(), filter.targetType(), boardIds, pageable);
+                    status, filter.targetType(), boardIds, pageable);
         } else if (hasBoardFilter) {
             return queueRepo.findByStatusAndBoardIdInOrderByPriorityDescCreatedAtAsc(
-                    filter.status(), boardIds, pageable);
+                    status, boardIds, pageable);
         } else if (hasTypeFilter) {
             return queueRepo.findByStatusAndTargetTypeOrderByPriorityDescCreatedAtAsc(
-                    filter.status(), filter.targetType(), pageable);
+                    status, filter.targetType(), pageable);
         } else {
             return queueRepo.findByStatusOrderByPriorityDescCreatedAtAsc(
-                    filter.status(), pageable);
+                    status, pageable);
         }
     }
 
@@ -291,15 +309,15 @@ public class ModerationService {
         long reportPending = reportRepo.countByStatus("pending");
         long reportsResolvedToday = reportRepo.countByStatusAndProcessedAtAfter("processed", todayStart);
 
-        // Quality stats
-        long totalMonth = Math.max(1, queueRepo.countApprovedSince(monthStart)
-                + queueRepo.countRejectedSince(monthStart));
-        long autoApproved = queueRepo.countAutoApprovedSince(monthStart);
-        long autoRejected = queueRepo.countAutoRejectedSince(monthStart);
+        // Quality stats — query from ai_audit_log (covers ALL AI decisions, including auto-approved which
+        // never creates a moderation_queue entry). Denominator is total AI autonomous decisions.
+        long autoApproved = aiAuditLogRepo.countByScoreLessThanSince(50, monthStart);
+        long autoRejected = aiAuditLogRepo.countByScoreAtLeastSince(85, monthStart);
         long manualApproved = logRepo.countByActionSince("manual_approved", monthStart);
+        long totalAiDecided = Math.max(1, autoApproved + autoRejected);
 
-        double passRate = (double) autoApproved / Math.max(1, totalMonth);
-        double blockRate = (double) autoRejected / Math.max(1, totalMonth);
+        double passRate = (double) autoApproved / totalAiDecided;
+        double blockRate = (double) autoRejected / totalAiDecided;
         double manualPassRate = (double) manualApproved
                 / Math.max(1, autoApproved + manualApproved
                 + logRepo.countByActionSince("manual_rejected", monthStart));
